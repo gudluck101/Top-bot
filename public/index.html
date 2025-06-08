@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Top Boy Pi Sender</title>
+</head>
+<body>
+  <h2>Send Pi Coins</h2>
+  <form action="/api/send" method="POST">
+    <label>Receiver Wallet Address:</label><br>
+    <input type="text" name="receiver" required><br><br>
+
+    <label>Amount (Pi):</label><br>
+    <input type="number" name="amount" step="0.01" required><br><br>
+
+    <button type="submit">Send</button>
+  </form>
+</body>
+</html>
