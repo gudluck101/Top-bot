@@ -5,22 +5,21 @@ const StellarSdk = require('stellar-sdk');
 // Connect to Pi Network Horizon server
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-// Load bots config from bot.json
+// Load bots config
 let bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
+
+const retryLimit = 50;
+let retryCounts = {};
 let statusMap = {};
 
-// Initialize retry counters and status
+// Initialize counters
 bots.forEach(bot => {
-  bot.retries = 0;
+  retryCounts[bot.name] = 0;
   statusMap[bot.name] = false;
 });
 
-async function send(bot, attempt = 1) {
-  if (attempt > 10) {
-    console.log(`❌ [${bot.name}] Max retries (10) reached.`);
-    statusMap[bot.name] = true;
-    return;
-  }
+async function send(bot) {
+  retryCounts[bot.name] += 1;
 
   try {
     const account = await server.loadAccount(bot.public);
@@ -42,11 +41,17 @@ async function send(bot, attempt = 1) {
     transaction.sign(keypair);
     const res = await server.submitTransaction(transaction);
     console.log(`✅ [${bot.name}] Sent ${bot.amount} Pi | TX: ${res.hash}`);
-    statusMap[bot.name] = true;
   } catch (e) {
     const errorMsg = e?.response?.data?.extras?.result_codes?.operations || e.message;
-    console.log(`❌ [${bot.name}] Failed (Attempt ${attempt}): ${errorMsg}`);
-    await send(bot, attempt + 1); // Retry immediately
+    console.log(`❌ [${bot.name}] Failed (Retry ${retryCounts[bot.name]}): ${errorMsg}`);
+  }
+
+  // Immediately retry if under limit
+  if (retryCounts[bot.name] < retryLimit) {
+    send(bot); // 🔁 No delay retry
+  } else {
+    console.log(`🛑 [${bot.name}] Retry limit (${retryLimit}) reached.`);
+    statusMap[bot.name] = true;
   }
 }
 
@@ -61,22 +66,23 @@ function checkTime() {
       parseInt(bot.second) === s &&
       !statusMap[bot.name]
     ) {
-      console.log(`🕓 [${bot.name}] Time matched! Sending ${bot.amount} Pi...`);
+      console.log(`🕓 [${bot.name}] Time matched! Starting up to ${retryLimit} retries...`);
       send(bot);
     }
 
-    // Reset status daily at 00:00:00
+    // Reset daily
     if (h === 0 && m === 0 && s === 0) {
+      retryCounts[bot.name] = 0;
       statusMap[bot.name] = false;
     }
   });
 }
 
-// Check every second
+// Run every second
 setInterval(checkTime, 1000);
 console.log("🟢 Multi-bot is running...");
 
-// ✅ Minimal HTTP server for Render
+// Minimal HTTP server for Render
 const PORT = process.env.PORT || 3000;
 
 http.createServer((req, res) => {
