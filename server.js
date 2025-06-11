@@ -1,10 +1,29 @@
-const app = express(); const PORT = process.env.PORT || 3000;
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const { initBots } = require('./multi-bot-runner');
 
-app.use(express.json()); app.use(express.static('public'));
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-app.get('/bots', (req, res) => { const data = fs.readFileSync(path.join(__dirname, 'bot.json')); res.json(JSON.parse(data)); });
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-app.post('/bots', (req, res) => { fs.writeFileSync(path.join(__dirname, 'bot.json'), JSON.stringify(req.body, null, 2)); res.json({ success: true }); initBots(); });
+const botsFile = './bot.json';
 
-app.listen(PORT, () => { console.log(✅ Server running on port ${PORT}); initBots(); });
+app.get('/bots', (req, res) => {
+  const bots = JSON.parse(fs.readFileSync(botsFile));
+  res.json(bots);
+});
 
+app.post('/bots', (req, res) => {
+  const bots = req.body;
+  fs.writeFileSync(botsFile, JSON.stringify(bots, null, 2));
+  res.json({ success: true });
+  process.exit(1); // force restart to reinitialize bots
+});
+
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  initBots();
+});
