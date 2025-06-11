@@ -1,24 +1,10 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const bodyParser = require('body-parser');
-require('dotenv').config();
+const app = express(); const PORT = process.env.PORT || 3000;
 
-const app = express();
-app.use(express.static('public'));
-app.use(bodyParser.json());
+app.use(express.json()); app.use(express.static('public'));
 
-const botsPath = path.join(__dirname, 'bots.json');
-const statusRoute = require('./monitor-status');
+app.get('/bots', (req, res) => { const data = fs.readFileSync(path.join(__dirname, 'bot.json')); res.json(JSON.parse(data)); });
 
-app.use('/api', statusRoute);
+app.post('/bots', (req, res) => { fs.writeFileSync(path.join(__dirname, 'bot.json'), JSON.stringify(req.body, null, 2)); res.json({ success: true }); initBots(); });
 
-app.post('/api/add-bot', (req, res) => {
-  const bots = JSON.parse(fs.readFileSync(botsPath));
-  bots.push(req.body);
-  fs.writeFileSync(botsPath, JSON.stringify(bots, null, 2));
-  res.send({ ok: true });
-});
+app.listen(PORT, () => { console.log(✅ Server running on port ${PORT}); initBots(); });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
