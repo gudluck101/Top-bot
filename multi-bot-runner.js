@@ -1,72 +1,50 @@
-require('dotenv').config();
-const StellarSdk = require('stellar-sdk');
 const fs = require('fs');
-const path = require('path');
-const botsPath = path.join(__dirname, 'bots.json');
-const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
-const statusMap = {};
+const { Keypair, TransactionBuilder, Networks, Operation, Server } = require('stellar-sdk');
 
-function loadBots() {
-  return JSON.parse(fs.readFileSync(botsPath));
+const botsFile = './bot.json';
+
+function sleep(ms) {
+  return new Promise((res) => setTimeout(res, ms));
 }
 
-function startBot(bot) {
-  const { name, public: pub, private: secret, receiver, amount, interval } = bot;
-  const keypair = StellarSdk.Keypair.fromSecret(secret);
-  const amountFloat = parseFloat(amount);
+async function startBot(bot) {
+  const server = new Server('https://api.mainnet.minepi.com');
+  const sourceKeypair = Keypair.fromSecret(bot.secret);
+  const accountPublic = sourceKeypair.publicKey();
 
-  const loop = async () => {
+  while (true) {
     try {
-      const account = await server.loadAccount(pub);
-      const balanceObj = account.balances.find(b => b.asset_type === 'native');
-      const balance = parseFloat(balanceObj?.balance || '0');
-
-      const ready = balance >= amountFloat;
-
-      statusMap[name] = {
-        name,
-        balance,
-        status: ready ? '🟢 Ready' : '⏳ Waiting',
-        receiver,
-        lastCheck: new Date().toISOString()
-      };
-
-      if (ready) {
-        const tx = new StellarSdk.TransactionBuilder(account, {
-          fee: await server.fetchBaseFee(),
-          networkPassphrase: StellarSdk.Networks.PUBLIC,
+      const account = await server.loadAccount(accountPublic);
+      const balance = parseFloat(account.balances.find(b => b.asset_type === 'native')?.balance || '0');
+      if (balance > 0.5) {
+        const amountToSend = (balance - 0.5).toFixed(7);
+        const tx = new TransactionBuilder(account, {
+          fee: (await server.fetchBaseFee()).toString(),
+          networkPassphrase: Networks.PUBLIC,
         })
-          .addOperation(StellarSdk.Operation.payment({
-            destination: receiver,
-            asset: StellarSdk.Asset.native(),
-            amount: amount,
-          }))
-          .setTimeout(30)
-          .build();
+        .addOperation(Operation.payment({
+          destination: bot.receiver,
+          asset: Operation.native(),
+          amount: amountToSend
+        }))
+        .setTimeout(30)
+        .build();
 
-        tx.sign(keypair);
-        const result = await server.submitTransaction(tx);
-        statusMap[name].status = `✅ Sent ${amount} PI`;
-        statusMap[name].txHash = result.hash;
+        tx.sign(sourceKeypair);
+        const txResult = await server.submitTransaction(tx);
+        console.log(`✅ Sent ${amountToSend} Pi from ${accountPublic}:`, txResult.hash);
       }
     } catch (err) {
-      statusMap[name] = {
-        name,
-        status: `❌ Error: ${err.message}`,
-        lastCheck: new Date().toISOString()
-      };
-    } finally {
-      setTimeout(loop, interval);
+      console.error(`❌ Error for ${bot.secret.slice(0, 5)}...:`, err.message);
     }
-  };
 
-  loop();
+    await sleep(200); // Check every 200ms
+  }
 }
 
 function initBots() {
-  const bots = loadBots();
+  const bots = JSON.parse(fs.readFileSync(botsFile));
   bots.forEach(startBot);
 }
 
-initBots();
-module.exports = statusMap;
+module.exports = { initBots };
