@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Wallet1",
+    "public": "G...",
+    "private": "S...",
+    "receiver": "G...",
+    "amount": "20",
+    "interval": 200
+  }
+]
