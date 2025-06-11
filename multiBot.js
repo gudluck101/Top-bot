@@ -1,12 +1,14 @@
 const fs = require('fs');
 const StellarSdk = require('stellar-sdk');
 
+// Connect to Pi Network Horizon server
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
-StellarSdk.Networks.use(new StellarSdk.Network('Pi Network'));
 
+// Load bots config from bot.json
 let bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 let statusMap = {};
 
+// Initialize retry counters and status
 bots.forEach(bot => {
   bot.retries = 0;
   statusMap[bot.name] = false;
@@ -43,7 +45,7 @@ async function send(bot, attempt = 1) {
   } catch (e) {
     const errorMsg = e?.response?.data?.extras?.result_codes?.operations || e.message;
     console.log(`❌ [${bot.name}] Failed (Attempt ${attempt}): ${errorMsg}`);
-    await send(bot, attempt + 1); // retry immediately
+    await send(bot, attempt + 1); // Retry immediately
   }
 }
 
@@ -62,11 +64,13 @@ function checkTime() {
       send(bot);
     }
 
+    // Reset status daily at 00:00:00
     if (h === 0 && m === 0 && s === 0) {
       statusMap[bot.name] = false;
     }
   });
 }
 
+// Check every second
 setInterval(checkTime, 1000);
 console.log("🟢 Multi-bot is running...");
