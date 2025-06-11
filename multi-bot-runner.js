@@ -38,7 +38,7 @@ async function startBot(bot) {
       console.error(`❌ Error for ${bot.secret.slice(0, 5)}...:`, err.message);
     }
 
-    await sleep(200); // Check every 200ms
+    await sleep(1000); // Check every 1000ms
   }
 }
 
