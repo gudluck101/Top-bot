@@ -1,4 +1,5 @@
 const fs = require('fs');
+const http = require('http');
 const StellarSdk = require('stellar-sdk');
 
 // Connect to Pi Network Horizon server
@@ -74,3 +75,13 @@ function checkTime() {
 // Check every second
 setInterval(checkTime, 1000);
 console.log("🟢 Multi-bot is running...");
+
+// ✅ Minimal HTTP server for Render
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('🟢 Pi Multi-bot is running.\n');
+}).listen(PORT, () => {
+  console.log(`🌐 HTTP server listening on port ${PORT}`);
+});
