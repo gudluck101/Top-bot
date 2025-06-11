@@ -1,43 +1,33 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>PI Bot Setup</title>
+  <title>Multi Pi Bot Config</title>
 </head>
 <body>
-  <h2>Add New Bot</h2>
+  <h2>Configure Bots</h2>
   <form id="bot-form">
-    <input name="name" placeholder="Bot Name" required><br>
-    <input name="public" placeholder="Public Key" required><br>
-    <input name="private" placeholder="Private Key" required><br>
-    <input name="receiver" placeholder="Receiver Wallet" required><br>
-    <input name="amount" placeholder="Amount to Send" required><br>
-    <input name="interval" placeholder="Interval (ms)" value="200" required><br>
-    <button type="submit">Add Bot</button>
+    <textarea id="bot-json" rows="15" cols="80"></textarea><br>
+    <button type="submit">Save Bots</button>
   </form>
-
-  <h3>Status</h3>
-  <pre id="status">Loading...</pre>
-
   <script>
-    document.getElementById('bot-form').onsubmit = async (e) => {
-      e.preventDefault();
-      const data = Object.fromEntries(new FormData(e.target));
-      const res = await fetch('/api/add-bot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      alert((await res.json()).ok ? 'Bot added' : 'Failed');
-    };
-
-    async function pollStatus() {
-      const res = await fetch('/api/status');
-      const status = await res.json();
-      document.getElementById('status').textContent = JSON.stringify(status, null, 2);
-      setTimeout(pollStatus, 1000);
+    async function loadBots() {
+      const res = await fetch('/bots');
+      const bots = await res.json();
+      document.getElementById('bot-json').value = JSON.stringify(bots, null, 2);
     }
 
-    pollStatus();
+    document.getElementById('bot-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const bots = JSON.parse(document.getElementById('bot-json').value);
+      await fetch('/bots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bots)
+      });
+      alert('✅ Bots saved and started!');
+    };
+
+    loadBots();
   </script>
 </body>
-  </html>
+</html>
