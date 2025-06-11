@@ -1,12 +1,11 @@
 {
-  "name": "pi-bot-monitor",
+  "name": "pi-auto-transfer",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "multiBot.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node multiBot.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "stellar-sdk": "^10.4.0"
+    "stellar-sdk": "^10.5.0"
   }
 }
