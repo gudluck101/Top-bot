@@ -41,17 +41,19 @@ async function send(bot) {
     transaction.sign(keypair);
     const res = await server.submitTransaction(transaction);
     console.log(`✅ [${bot.name}] Sent ${bot.amount} Pi | TX: ${res.hash}`);
+
+    statusMap[bot.name] = true; // Success, no retry
   } catch (e) {
     const errorMsg = e?.response?.data?.extras?.result_codes?.operations || e.message;
     console.log(`❌ [${bot.name}] Failed (Retry ${retryCounts[bot.name]}): ${errorMsg}`);
-  }
 
-  // Immediately retry if under limit
-  if (retryCounts[bot.name] < retryLimit) {
-    send(bot); // 🔁 No delay retry
-  } else {
-    console.log(`🛑 [${bot.name}] Retry limit (${retryLimit}) reached.`);
-    statusMap[bot.name] = true;
+    if (retryCounts[bot.name] < retryLimit) {
+      // ⏳ Wait 2 seconds before retrying
+      setTimeout(() => send(bot), 2000);
+    } else {
+      console.log(`🛑 [${bot.name}] Retry limit (${retryLimit}) reached.`);
+      statusMap[bot.name] = true;
+    }
   }
 }
 
