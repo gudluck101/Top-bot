@@ -124,7 +124,7 @@ async function sendCoins(bot) {
   }
 }
 
-// Tick every 100 ms
+// Tick every 100 ms
 setInterval(() => {
   const now = new Date();
   const [h, m, s, ms] = [
@@ -178,10 +178,11 @@ setInterval(() => {
 
 console.log('🟢 Pi Multi‑Bot Claim & Send is running…');
 
+// 🚨 FIXED THE HEADER HERE
 const PORT = process.env.PORT || 3000;
 http
   .createServer((req, res) => {
-    res.writeHead(200, { 'Content‑Type': 'text/plain' });
+    res.writeHead(200, { 'Content-Type': 'text/plain' }); // <-- FIXED THIS LINE
     res.end('🟢 Pi Multi‑Bot is running.\n');
   })
   .listen(PORT, () => console.log(`🌐 HTTP server on port ${PORT}`));
