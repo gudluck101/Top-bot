@@ -9,7 +9,7 @@ const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 
 const retryLimit = 10;
-const retryDelay = 1500; // 1.5 seconds
+const retryDelay = 1500;
 
 const botStates = {};
 
@@ -23,6 +23,7 @@ bots.forEach(bot => {
     claimables: [],
     claimTx: null,
     sendTx: null,
+    resetToday: false,
   };
 });
 
@@ -43,7 +44,6 @@ async function prepare(bot) {
       networkPassphrase: 'Pi Network',
     });
 
-    // Add claimable balance ops
     state.claimables.forEach(id => {
       txBuilder.addOperation(
         StellarSdk.Operation.claimClaimableBalance({ balanceId: id })
@@ -53,7 +53,6 @@ async function prepare(bot) {
     state.claimTx = state.claimables.length > 0 ? txBuilder.setTimeout(60).build() : null;
     if (state.claimTx) state.claimTx.sign(keypair);
 
-    // Build send TX from bot.json amount
     const sendBuilder = new StellarSdk.TransactionBuilder(account, {
       fee,
       networkPassphrase: 'Pi Network',
@@ -92,7 +91,7 @@ async function submitClaim(bot) {
   if (!state.claimTx) {
     console.log(`⚠️ [${bot.name}] No claim TX. Skipping claim.`);
     state.done = true;
-    await sendCoins(bot); // ✅ Await here
+    await sendCoins(bot);
     return;
   }
 
@@ -100,7 +99,7 @@ async function submitClaim(bot) {
     const res = await server.submitTransaction(state.claimTx);
     console.log(`✅ [${bot.name}] Claimed claimables | TX: ${res.hash}`);
     state.done = true;
-    await sendCoins(bot); // ✅ Await here
+    await sendCoins(bot);
   } catch (e) {
     state.retries++;
     const msg = e?.response?.data?.extras?.result_codes?.operations || e.message;
@@ -110,13 +109,12 @@ async function submitClaim(bot) {
     } else {
       console.log(`🛑 [${bot.name}] Claim failed after ${retryLimit} retries.`);
       state.done = true;
-      await sendCoins(bot); // ✅ Fallback to send even if claim fails
+      await sendCoins(bot);
     }
   }
 }
 
 async function sendCoins(bot) {
-  console.log(`🚀 [${bot.name}] Attempting to send coins...`);
   const state = botStates[bot.name];
   if (!state.sendTx || state.sendRetries >= retryLimit) {
     console.log(`⛔ [${bot.name}] No sendTx or retries exceeded.`);
@@ -138,10 +136,13 @@ async function sendCoins(bot) {
   }
 }
 
-// Tick every 100ms to match time
+// Interval check every 100ms
 setInterval(() => {
   const now = new Date();
-  const [h, m, s, ms] = [now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds()];
+  const h = (now.getUTCHours() + 1) % 24; // Nigeria time (UTC+1)
+  const m = now.getUTCMinutes();
+  const s = now.getUTCSeconds();
+  const ms = now.getUTCMilliseconds();
 
   bots.forEach(bot => {
     const bh = parseInt(bot.hour);
@@ -150,8 +151,8 @@ setInterval(() => {
     const bms = parseInt(bot.ms || 0);
     const state = botStates[bot.name];
 
-    // Reset at midnight
-    if (h === 0 && m === 0 && s === 0 && ms < 100) {
+    // Daily reset (between 00:00 and 00:02 Nigeria time)
+    if (!state.resetToday && h === 0 && m === 0 && s < 2) {
       Object.assign(state, {
         prepared: false,
         done: false,
@@ -160,12 +161,17 @@ setInterval(() => {
         claimables: [],
         claimTx: null,
         sendTx: null,
+        resetToday: true,
       });
-      console.log(`🔁 [${bot.name}] State reset.`);
+      console.log(`🔁 [${bot.name}] Daily state reset.`);
       prepare(bot);
     }
 
-    // Prepare if we're near target time
+    if (h > 0 && state.resetToday) {
+      state.resetToday = false; // allow next day's reset
+    }
+
+    // Prepare early
     if (
       !state.prepared &&
       (h > bh || (h === bh && m > bm) || (h === bh && m === bm && s >= bs - 10))
@@ -173,7 +179,7 @@ setInterval(() => {
       prepare(bot);
     }
 
-    // Execute at exact time
+    // Match exact time
     if (
       h === bh &&
       m === bm &&
@@ -190,7 +196,7 @@ setInterval(() => {
 
 console.log('🟢 Pi Multi‑Bot Claim & Send is running…');
 
-// 🌐 HTTP Server (for uptime pings)
+// HTTP ping server (optional for uptime)
 const PORT = process.env.PORT || 3000;
 http
   .createServer((req, res) => {
