@@ -6,18 +6,18 @@
     "destination": "MD5HGPHVL73EBDUD2Z4K2VDRLUBC4FFN7GOBLKPK6OPPXH6TED4TQAAAAGLR2Q7MDWSCG",
     "amount": "1.23",
     "hour": "8",
-    "minute": "20",
+    "minute": "24",
     "second": "0",
     "ms": "0"
   },
   {
     "name": "wallet bot2",
     "public": "GA3R3QJZYM3WQ7H6LRJM5CUTLXJVK3R5MD724WHMBQY5CE6CNK5YKOB6",
-    "secret": SB32NUPK7U7PFNO7RRMKGHIJRHNNW7H3YI23EBCSJIYTFYEMOEYVKJR4",
+    "secret": "SB32NUPK7U7PFNO7RRMKGHIJRHNNW7H3YI23EBCSJIYTFYEMOEYVKJR4",
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "amount": "2.34",
     "hour": "8",
-    "minute": "20",
+    "minute": "24",
     "second": "0",
     "ms": "0"
   }
