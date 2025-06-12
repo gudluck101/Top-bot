@@ -4,8 +4,9 @@
     "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
     "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "recipient": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
-    "hour": "22",
-    "minute": "55",
+    "amount": "1",
+    "hour": "23",
+    "minute": "07",
     "second": "00",
     "ms": "0"
   }
