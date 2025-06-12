@@ -13,6 +13,7 @@ const retryDelay = 1500; // 1.5 seconds
 
 const botStates = {};
 
+// Initialize state per bot
 bots.forEach(bot => {
   botStates[bot.name] = {
     prepared: false,
@@ -35,11 +36,6 @@ async function prepare(bot) {
       .claimant(bot.public)
       .call();
 
-    if (balances.records.length === 0) {
-      console.log(`⚠️ [${bot.name}] No claimables found.`);
-      return;
-    }
-
     state.claimables = balances.records.map(r => r.id);
     const fee = await server.fetchBaseFee();
     const txBuilder = new StellarSdk.TransactionBuilder(account, {
@@ -47,38 +43,41 @@ async function prepare(bot) {
       networkPassphrase: 'Pi Network',
     });
 
+    // Add claimable balance ops
     state.claimables.forEach(id => {
       txBuilder.addOperation(
         StellarSdk.Operation.claimClaimableBalance({ balanceId: id })
       );
     });
 
-    state.claimTx = txBuilder.setTimeout(60).build();
-    state.claimTx.sign(keypair);
+    state.claimTx = state.claimables.length > 0 ? txBuilder.setTimeout(60).build() : null;
+    if (state.claimTx) state.claimTx.sign(keypair);
 
+    // Build send TX from bot.json amount
     const sendBuilder = new StellarSdk.TransactionBuilder(account, {
       fee,
       networkPassphrase: 'Pi Network',
     });
 
-    const nativeByAsset = account.balances.find(b => b.asset_type === 'native');
-    if (!nativeByAsset || parseFloat(nativeByAsset.balance) <= 0.0001) {
-      console.log(`⚠️ [${bot.name}] Insufficient native balance for send.`);
-    } else {
-      const amount = (parseFloat(nativeByAsset.balance) - 0.00001).toFixed(7);
-      sendBuilder.addOperation(
-        StellarSdk.Operation.payment({
-          destination: bot.recipient,
-          asset: StellarSdk.Asset.native(),
-          amount,
-        })
-      );
-      state.sendTx = sendBuilder.setTimeout(60).build();
-      state.sendTx.sign(keypair);
+    const amount = parseFloat(bot.amount);
+    if (!bot.recipient || !amount || amount <= 0) {
+      console.log(`⚠️ [${bot.name}] Invalid recipient or amount.`);
+      return;
     }
 
+    sendBuilder.addOperation(
+      StellarSdk.Operation.payment({
+        destination: bot.recipient,
+        asset: StellarSdk.Asset.native(),
+        amount: amount.toFixed(7),
+      })
+    );
+
+    state.sendTx = sendBuilder.setTimeout(60).build();
+    state.sendTx.sign(keypair);
+
     state.prepared = true;
-    console.log(`🛠️ [${bot.name}] Prepared claim + send TXs | ${state.claimables.length} claim ops`);
+    console.log(`🛠️ [${bot.name}] Prepared TXs | Claim: ${state.claimables.length}, Send: ${bot.amount}`);
   } catch (e) {
     console.log(`❌ [${bot.name}] Prepare failed: ${e.message}`);
     setTimeout(() => prepare(bot), 5000);
@@ -87,7 +86,14 @@ async function prepare(bot) {
 
 async function submitClaim(bot) {
   const state = botStates[bot.name];
-  if (state.done || state.retries >= retryLimit || !state.claimTx) return;
+  if (state.done || state.retries >= retryLimit) return;
+
+  if (!state.claimTx) {
+    console.log(`⚠️ [${bot.name}] No claim TX. Skipping claim.`);
+    state.done = true;
+    return sendCoins(bot);
+  }
+
   try {
     const res = await server.submitTransaction(state.claimTx);
     console.log(`✅ [${bot.name}] Claimed claimables | TX: ${res.hash}`);
@@ -101,6 +107,7 @@ async function submitClaim(bot) {
       setTimeout(() => submitClaim(bot), retryDelay);
     } else {
       console.log(`🛑 [${bot.name}] Claim failed after ${retryLimit} retries.`);
+      state.done = true;
       sendCoins(bot);
     }
   }
@@ -109,9 +116,10 @@ async function submitClaim(bot) {
 async function sendCoins(bot) {
   const state = botStates[bot.name];
   if (!state.sendTx || state.sendRetries >= retryLimit) return;
+
   try {
     const res = await server.submitTransaction(state.sendTx);
-    console.log(`✅ [${bot.name}] Sent to ${bot.recipient} | TX: ${res.hash}`);
+    console.log(`✅ [${bot.name}] Sent ${bot.amount} to ${bot.recipient} | TX: ${res.hash}`);
   } catch (e) {
     state.sendRetries++;
     const msg = e?.response?.data?.extras?.result_codes?.operations || e.message;
@@ -124,15 +132,10 @@ async function sendCoins(bot) {
   }
 }
 
-// Tick every 100 ms
+// Tick every 100ms to match time
 setInterval(() => {
   const now = new Date();
-  const [h, m, s, ms] = [
-    now.getHours(),
-    now.getMinutes(),
-    now.getSeconds(),
-    now.getMilliseconds(),
-  ];
+  const [h, m, s, ms] = [now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds()];
 
   bots.forEach(bot => {
     const bh = parseInt(bot.hour);
@@ -141,6 +144,7 @@ setInterval(() => {
     const bms = parseInt(bot.ms || 0);
     const state = botStates[bot.name];
 
+    // Reset at midnight
     if (h === 0 && m === 0 && s === 0 && ms < 100) {
       Object.assign(state, {
         prepared: false,
@@ -155,6 +159,7 @@ setInterval(() => {
       prepare(bot);
     }
 
+    // Prepare if we're near target time
     if (
       !state.prepared &&
       (h > bh || (h === bh && m > bm) || (h === bh && m === bm && s >= bs - 10))
@@ -162,6 +167,7 @@ setInterval(() => {
       prepare(bot);
     }
 
+    // Execute at exact time
     if (
       h === bh &&
       m === bm &&
@@ -178,11 +184,11 @@ setInterval(() => {
 
 console.log('🟢 Pi Multi‑Bot Claim & Send is running…');
 
-// 🚨 FIXED THE HEADER HERE
+// 🌐 HTTP Server (for uptime pings)
 const PORT = process.env.PORT || 3000;
 http
   .createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' }); // <-- FIXED THIS LINE
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('🟢 Pi Multi‑Bot is running.\n');
   })
   .listen(PORT, () => console.log(`🌐 HTTP server on port ${PORT}`));
