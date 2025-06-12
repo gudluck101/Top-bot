@@ -76,6 +76,7 @@ async function prepare(bot) {
     state.sendTx = sendBuilder.setTimeout(60).build();
     state.sendTx.sign(keypair);
 
+    console.log(`🔐 [${bot.name}] sendTx signed for ${bot.amount} Pi to ${bot.recipient}`);
     state.prepared = true;
     console.log(`🛠️ [${bot.name}] Prepared TXs | Claim: ${state.claimables.length}, Send: ${bot.amount}`);
   } catch (e) {
@@ -91,14 +92,15 @@ async function submitClaim(bot) {
   if (!state.claimTx) {
     console.log(`⚠️ [${bot.name}] No claim TX. Skipping claim.`);
     state.done = true;
-    return sendCoins(bot);
+    await sendCoins(bot); // ✅ Await here
+    return;
   }
 
   try {
     const res = await server.submitTransaction(state.claimTx);
     console.log(`✅ [${bot.name}] Claimed claimables | TX: ${res.hash}`);
     state.done = true;
-    sendCoins(bot);
+    await sendCoins(bot); // ✅ Await here
   } catch (e) {
     state.retries++;
     const msg = e?.response?.data?.extras?.result_codes?.operations || e.message;
@@ -108,14 +110,18 @@ async function submitClaim(bot) {
     } else {
       console.log(`🛑 [${bot.name}] Claim failed after ${retryLimit} retries.`);
       state.done = true;
-      sendCoins(bot);
+      await sendCoins(bot); // ✅ Fallback to send even if claim fails
     }
   }
 }
 
 async function sendCoins(bot) {
+  console.log(`🚀 [${bot.name}] Attempting to send coins...`);
   const state = botStates[bot.name];
-  if (!state.sendTx || state.sendRetries >= retryLimit) return;
+  if (!state.sendTx || state.sendRetries >= retryLimit) {
+    console.log(`⛔ [${bot.name}] No sendTx or retries exceeded.`);
+    return;
+  }
 
   try {
     const res = await server.submitTransaction(state.sendTx);
