@@ -6,123 +6,182 @@ const StellarSdk = require('stellar-sdk');
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
 // Load bot config
-let bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
+const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 
-// Config
-const retryLimit = 20;
-const retryDelay = 2000; // 2 seconds
+const retryLimit = 10;
+const retryDelay = 1500; // 1.5 seconds
 
-let botStates = {}; // botName => { prepared, retries, done, txData }
+const botStates = {};
 
 bots.forEach(bot => {
   botStates[bot.name] = {
     prepared: false,
     retries: 0,
+    sendRetries: 0,
     done: false,
-    txData: null
+    claimables: [],
+    claimTx: null,
+    sendTx: null,
   };
 });
 
-// Pre-prepare transaction data
 async function prepare(bot) {
+  const state = botStates[bot.name];
   try {
-    const account = await server.loadAccount(bot.public);
-    const fee = await server.fetchBaseFee();
     const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
+    const account = await server.loadAccount(bot.public);
+    const balances = await server
+      .claimableBalances()
+      .claimant(bot.public)
+      .call();
 
-    const tx = new StellarSdk.TransactionBuilder(account, {
+    if (balances.records.length === 0) {
+      console.log(`⚠️ [${bot.name}] No claimables found.`);
+      return;
+    }
+
+    state.claimables = balances.records.map(r => r.id);
+    const fee = await server.fetchBaseFee();
+    const txBuilder = new StellarSdk.TransactionBuilder(account, {
       fee,
       networkPassphrase: 'Pi Network',
-    })
-      .addOperation(StellarSdk.Operation.payment({
-        destination: bot.destination,
-        asset: StellarSdk.Asset.native(),
-        amount: bot.amount,
-      }))
-      .setTimeout(60)
-      .build();
+    });
 
-    tx.sign(keypair);
-    botStates[bot.name].txData = tx;
-    botStates[bot.name].prepared = true;
-    console.log(`🛠️ [${bot.name}] Transaction prepared.`);
+    state.claimables.forEach(id => {
+      txBuilder.addOperation(
+        StellarSdk.Operation.claimClaimableBalance({ balanceId: id })
+      );
+    });
+
+    state.claimTx = txBuilder.setTimeout(60).build();
+    state.claimTx.sign(keypair);
+
+    const sendBuilder = new StellarSdk.TransactionBuilder(account, {
+      fee,
+      networkPassphrase: 'Pi Network',
+    });
+
+    const nativeByAsset = account.balances.find(b => b.asset_type === 'native');
+    if (!nativeByAsset || parseFloat(nativeByAsset.balance) <= 0.0001) {
+      console.log(`⚠️ [${bot.name}] Insufficient native balance for send.`);
+    } else {
+      const amount = (parseFloat(nativeByAsset.balance) - 0.00001).toFixed(7);
+      sendBuilder.addOperation(
+        StellarSdk.Operation.payment({
+          destination: bot.recipient,
+          asset: StellarSdk.Asset.native(),
+          amount,
+        })
+      );
+      state.sendTx = sendBuilder.setTimeout(60).build();
+      state.sendTx.sign(keypair);
+    }
+
+    state.prepared = true;
+    console.log(`🛠️ [${bot.name}] Prepared claim + send TXs | ${state.claimables.length} claim ops`);
   } catch (e) {
-    console.log(`⚠️ [${bot.name}] Failed to prepare: ${e.message}`);
-    setTimeout(() => prepare(bot), 5000); // Retry preparation every 5s
+    console.log(`❌ [${bot.name}] Prepare failed: ${e.message}`);
+    setTimeout(() => prepare(bot), 5000);
   }
 }
 
-// Submit transaction with retries
-async function sendWithRetry(bot) {
-  const botState = botStates[bot.name];
-
-  if (botState.done || botState.retries >= retryLimit) return;
-
+async function submitClaim(bot) {
+  const state = botStates[bot.name];
+  if (state.done || state.retries >= retryLimit || !state.claimTx) return;
   try {
-    const res = await server.submitTransaction(botState.txData);
-    console.log(`✅ [${bot.name}] Sent ${bot.amount} Pi | TX: ${res.hash}`);
-    botState.done = true;
+    const res = await server.submitTransaction(state.claimTx);
+    console.log(`✅ [${bot.name}] Claimed claimables | TX: ${res.hash}`);
+    state.done = true;
+    sendCoins(bot);
   } catch (e) {
-    const errorMsg = e?.response?.data?.extras?.result_codes?.operations || e.message;
-    botState.retries++;
-    console.log(`❌ [${bot.name}] Attempt ${botState.retries}: ${errorMsg}`);
-    if (botState.retries < retryLimit) {
-      setTimeout(() => sendWithRetry(bot), retryDelay);
+    state.retries++;
+    const msg = e?.response?.data?.extras?.result_codes?.operations || e.message;
+    console.log(`❌ [${bot.name}] Claim retry ${state.retries}: ${msg}`);
+    if (state.retries < retryLimit) {
+      setTimeout(() => submitClaim(bot), retryDelay);
     } else {
-      console.log(`🛑 [${bot.name}] Gave up after ${retryLimit} retries.`);
-      botState.done = true;
+      console.log(`🛑 [${bot.name}] Claim failed after ${retryLimit} retries.`);
+      sendCoins(bot);
     }
   }
 }
 
-// Check every 100ms
+async function sendCoins(bot) {
+  const state = botStates[bot.name];
+  if (!state.sendTx || state.sendRetries >= retryLimit) return;
+  try {
+    const res = await server.submitTransaction(state.sendTx);
+    console.log(`✅ [${bot.name}] Sent to ${bot.recipient} | TX: ${res.hash}`);
+  } catch (e) {
+    state.sendRetries++;
+    const msg = e?.response?.data?.extras?.result_codes?.operations || e.message;
+    console.log(`❌ [${bot.name}] Send retry ${state.sendRetries}: ${msg}`);
+    if (state.sendRetries < retryLimit) {
+      setTimeout(() => sendCoins(bot), retryDelay);
+    } else {
+      console.log(`🛑 [${bot.name}] Send failed after ${retryLimit} retries.`);
+    }
+  }
+}
+
+// Tick every 100 ms
 setInterval(() => {
   const now = new Date();
-  const [h, m, s, ms] = [now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds()];
+  const [h, m, s, ms] = [
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds(),
+    now.getMilliseconds(),
+  ];
 
   bots.forEach(bot => {
-    const [bh, bm, bs, bms] = [parseInt(bot.hour), parseInt(bot.minute), parseInt(bot.second), parseInt(bot.ms || 0)];
-    const botState = botStates[bot.name];
+    const bh = parseInt(bot.hour);
+    const bm = parseInt(bot.minute);
+    const bs = parseInt(bot.second);
+    const bms = parseInt(bot.ms || 0);
+    const state = botStates[bot.name];
 
-    // Daily reset
     if (h === 0 && m === 0 && s === 0 && ms < 100) {
-      botState.retries = 0;
-      botState.done = false;
-      botState.prepared = false;
-      botState.txData = null;
-      console.log(`🔁 [${bot.name}] Reset state.`);
+      Object.assign(state, {
+        prepared: false,
+        done: false,
+        retries: 0,
+        sendRetries: 0,
+        claimables: [],
+        claimTx: null,
+        sendTx: null,
+      });
+      console.log(`🔁 [${bot.name}] State reset.`);
       prepare(bot);
     }
 
-    // Prepare a few seconds early
-    if (!botState.prepared && (
-      h > bh || (h === bh && m > bm) || (h === bh && m === bm && s >= bs - 5)
-    )) {
+    if (
+      !state.prepared &&
+      (h > bh || (h === bh && m > bm) || (h === bh && m === bm && s >= bs - 10))
+    ) {
       prepare(bot);
     }
 
-    // Time match
     if (
       h === bh &&
       m === bm &&
       s === bs &&
-      Math.abs(ms - bms) < 100 &&
-      botState.prepared &&
-      !botState.done
+      Math.abs(ms - bms) < 150 &&
+      state.prepared &&
+      !state.done
     ) {
-      console.log(`🕓 [${bot.name}] Time matched. Sending now...`);
-      sendWithRetry(bot);
+      console.log(`🕓 [${bot.name}] Time matched. Submitting claim.`);
+      submitClaim(bot);
     }
   });
-}, 100); // 100ms check
+}, 100);
 
-console.log("🟢 Multi-bot scheduler is running...");
+console.log('🟢 Pi Multi‑Bot Claim & Send is running…');
 
-// Minimal HTTP server
 const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('🟢 Pi Multi-bot is running.\n');
-}).listen(PORT, () => {
-  console.log(`🌐 HTTP server listening on port ${PORT}`);
-});
+http
+  .createServer((req, res) => {
+    res.writeHead(200, { 'Content‑Type': 'text/plain' });
+    res.end('🟢 Pi Multi‑Bot is running.\n');
+  })
+  .listen(PORT, () => console.log(`🌐 HTTP server on port ${PORT}`));
