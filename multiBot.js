@@ -1,5 +1,19 @@
 const fs = require('fs');
+const express = require('express');
 const StellarSdk = require('stellar-sdk');
+
+// Start Express server
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Status route
+app.get('/', (req, res) => {
+  res.send('🟢 Multi-bot is running. Bots: ' + Object.keys(statusMap).join(', '));
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 Server is listening on port ${PORT}`);
+});
 
 // Connect to Pi Network Horizon server
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
@@ -15,8 +29,8 @@ bots.forEach(bot => {
 });
 
 async function send(bot, attempt = 1) {
-  if (attempt > 10) {
-    console.log(`❌ [${bot.name}] Max retries (10) reached.`);
+  if (attempt > 20) {
+    console.log(`❌ [${bot.name}] Max retries (20) reached.`);
     statusMap[bot.name] = true;
     return;
   }
@@ -53,6 +67,8 @@ function checkTime() {
   const now = new Date();
   const [h, m, s] = [now.getHours(), now.getMinutes(), now.getSeconds()];
 
+  const sendTasks = [];
+
   bots.forEach(bot => {
     if (
       parseInt(bot.hour) === h &&
@@ -61,7 +77,7 @@ function checkTime() {
       !statusMap[bot.name]
     ) {
       console.log(`🕓 [${bot.name}] Time matched! Sending ${bot.amount} Pi...`);
-      send(bot);
+      sendTasks.push(send(bot)); // Queue the send
     }
 
     // Reset status daily at 00:00:00
@@ -69,6 +85,11 @@ function checkTime() {
       statusMap[bot.name] = false;
     }
   });
+
+  // Run all send operations concurrently
+  if (sendTasks.length > 0) {
+    Promise.all(sendTasks).catch(err => console.error('❌ Multi-send error:', err));
+  }
 }
 
 // Check every second
