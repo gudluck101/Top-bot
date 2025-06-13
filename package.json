@@ -1,10 +1,10 @@
 {
   "name": "pi-claim-bot",
   "version": "1.0.0",
-  "type": "module",
-  "main": "multiBot.js",
+  "type": "commonjs",
+  "main": "multiBot.cjs",
   "scripts": {
-    "start": "node multiBot.js"
+    "start": "node multiBot.cjs"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^13.3.0"
