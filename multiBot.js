@@ -5,10 +5,10 @@ const StellarSdk = require('stellar-sdk');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-let executed = false;
-let preparedTxs = {};
+let executed = false; // Flag to run all bots once
+let triggeredTimeMs = null;
 
-// Helper: convert target time to ms
+// Helper to parse bot time
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -18,46 +18,26 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Prepare and sign all transactions
-async function prepareTransactions() {
-  console.log("⏳ Preparing all transactions...");
-  for (let bot of bots) {
-    try {
-      const account = await server.loadAccount(bot.public);
-      const fee = await server.fetchBaseFee();
-      const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
-
-      const tx = new StellarSdk.TransactionBuilder(account, {
-        fee,
-        networkPassphrase: 'Pi Network',
-      })
-        .addOperation(StellarSdk.Operation.payment({
-          destination: bot.destination,
-          asset: StellarSdk.Asset.native(),
-          amount: bot.amount,
-        }))
-        .setTimeout(60)
-        .build();
-
-      tx.sign(keypair);
-      preparedTxs[bot.name] = tx;
-      console.log(`🧾 [${bot.name}] Prepared and signed.`);
-    } catch (e) {
-      console.error(`❌ Failed to prepare [${bot.name}]: ${e.message}`);
-    }
-  }
-  console.log("✅ All transactions ready.");
-}
-
-// Submit prepared transaction
-async function submit(bot) {
+// Send function (no retry)
+async function send(bot) {
   try {
-    const tx = preparedTxs[bot.name];
-    if (!tx) {
-      console.error(`❌ [${bot.name}] Transaction not prepared.`);
-      return;
-    }
+    const account = await server.loadAccount(bot.public);
+    const fee = await server.fetchBaseFee();
+    const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
 
+    const tx = new StellarSdk.TransactionBuilder(account, {
+      fee,
+      networkPassphrase: 'Pi Network',
+    })
+      .addOperation(StellarSdk.Operation.payment({
+        destination: bot.destination,
+        asset: StellarSdk.Asset.native(),
+        amount: bot.amount,
+      }))
+      .setTimeout(60)
+      .build();
+
+    tx.sign(keypair);
     const res = await server.submitTransaction(tx);
     console.log(`✅ [${bot.name}] Sent ${bot.amount} Pi | TX: ${res.hash}`);
   } catch (e) {
@@ -66,16 +46,16 @@ async function submit(bot) {
   }
 }
 
-// Sequentially submit all bots
-async function submitAll() {
+// Run all bots sequentially
+async function runBotsSequentially() {
   for (let bot of bots) {
-    console.log(`🚀 Sending [${bot.name}]...`);
-    await submit(bot);
-    await new Promise(res => setTimeout(res, 0)); // 0s gap
+    console.log(`🚀 Executing [${bot.name}]...`);
+    await send(bot);
+    await new Promise(res => setTimeout(res, 0)); // 1s delay between each
   }
 }
 
-// Check time match
+// Check every 100ms
 setInterval(() => {
   if (executed) return;
 
@@ -83,34 +63,32 @@ setInterval(() => {
   const nowMs = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000 + now.getMilliseconds();
 
   const firstBot = bots[0];
-  const triggerMs = getBotTimestamp(firstBot);
-  const diff = Math.abs(nowMs - triggerMs);
+  const botTimeMs = getBotTimestamp(firstBot);
+  const diff = Math.abs(nowMs - botTimeMs);
 
   if (diff <= 200) {
-    console.log(`⏰ Triggered by [${firstBot.name}] at ${now.toISOString()}`);
+    console.log(`⏰ [${firstBot.name}] Time matched. Starting sequence...`);
+    triggeredTimeMs = nowMs;
     executed = true;
-    submitAll();
+    runBotsSequentially();
   }
 
-  // Reset at 00:00:00
+  // Reset daily at 00:00:00
   if (nowMs < 1000) {
     executed = false;
-    console.log("🔄 New day, system reset.");
-    prepareTransactions(); // Re-prepare for the new day
+    triggeredTimeMs = null;
+    console.log("🔄 Resetting for new day.");
   }
 }, 100);
 
-// Startup
-prepareTransactions();
-
-// Web server
+// Start Express server for status check
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (_, res) => {
-  res.send(`🟢 Multi-bot running. Executed today? ${executed ? '✅' : '❌'}`);
+app.get('/', (req, res) => {
+  res.send(`🟢 Multi-bot active. Triggered: ${executed ? 'Yes' : 'No'}`);
 });
 
 app.listen(PORT, () => {
-  console.log(`🌐 Web server on port ${PORT}`);
+  console.log(`🌐 Server running on port ${PORT}`);
 });
