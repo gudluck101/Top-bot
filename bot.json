@@ -4,29 +4,54 @@
     "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
     "destination": "GD45B2DB27NWXJRHNY6RPFD7CZMDP4CKXRDFNDXEWUPJJF5LLTN5TAYC",
-    "amount": "1",
-    "hour": 13,
-    "minute": 30,
-    "second": 0
+    "amount": "0.5",
+    "hour": "13",
+    "minute": "50",
+    "second": "0",
+    "millisecond": "0"
   },
   {
     "name": "wallet2",
     "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
     "destination": "GD45B2DB27NWXJRHNY6RPFD7CZMDP4CKXRDFNDXEWUPJJF5LLTN5TAYC",
-    "amount": "2",
-    "hour": 13,
-    "minute": 30,
-    "second": 0
+    "amount": "0.5",
+    "hour": "13",
+    "minute": "50",
+    "second": "0",
+    "millisecond": "200"
   },
   {
     "name": "wallet3",
     "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
     "destination": "GD45B2DB27NWXJRHNY6RPFD7CZMDP4CKXRDFNDXEWUPJJF5LLTN5TAYC",
-    "amount": "3",
-    "hour": 13,
-    "minute": 30,
-    "second": 0
+    "amount": "0.5",
+    "hour": "13",
+    "minute": "50",
+    "second": "0",
+    "millisecond": "400"
+  },
+  {
+    "name": "wallet4",
+    "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
+    "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
+    "destination": "GD45B2DB27NWXJRHNY6RPFD7CZMDP4CKXRDFNDXEWUPJJF5LLTN5TAYC",
+    "amount": "0.5",
+    "hour": "13",
+    "minute": "50",
+    "second": "0",
+    "millisecond": "600"
+  },
+  {
+    "name": "wallet5",
+    "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
+    "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
+    "destination": "GD45B2DB27NWXJRHNY6RPFD7CZMDP4CKXRDFNDXEWUPJJF5LLTN5TAYC",
+    "amount": "0.5",
+    "hour": "13",
+    "minute": "50",
+    "second": "0",
+    "millisecond": "800"
   }
-]
+    ]
