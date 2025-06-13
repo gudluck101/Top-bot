@@ -1,62 +1,76 @@
-const fs = require("fs");
-const { Server, Keypair, TransactionBuilder, Networks, Operation } = require("@stellar/stellar-sdk");
-const moment = require("moment-timezone");
+const fs = require('fs');
+const StellarSdk = require('stellar-sdk');
 
-const server = new Server("https://api.mainnet.minepi.com");
+// Connect to Pi Network Horizon server
+const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-async function prepareTransaction(secret, targetAddress) {
+// Load bots config from bot.json
+let bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
+let statusMap = {};
+
+// Initialize retry counters and status
+bots.forEach(bot => {
+  bot.retries = 0;
+  statusMap[bot.name] = false;
+});
+
+async function send(bot, attempt = 1) {
+  if (attempt > 10) {
+    console.log(`❌ [${bot.name}] Max retries (10) reached.`);
+    statusMap[bot.name] = true;
+    return;
+  }
+
   try {
-    const sourceKeypair = Keypair.fromSecret(secret);
-    const sourcePublicKey = sourceKeypair.publicKey();
-
-    const account = await server.loadAccount(sourcePublicKey);
+    const account = await server.loadAccount(bot.public);
     const fee = await server.fetchBaseFee();
+    const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
 
-    const tx = new TransactionBuilder(account, {
-      fee: fee.toString(),
-      networkPassphrase: Networks.PI_MAINNET
+    const transaction = new StellarSdk.TransactionBuilder(account, {
+      fee,
+      networkPassphrase: 'Pi Network',
     })
-      .addOperation(Operation.claimClaimableBalance({ balanceId: "TODO_YOUR_BALANCE_ID" }))
-      .setTimeout(180)
+      .addOperation(StellarSdk.Operation.payment({
+        destination: bot.destination,
+        asset: StellarSdk.Asset.native(),
+        amount: bot.amount,
+      }))
+      .setTimeout(60)
       .build();
 
-    tx.sign(sourceKeypair);
-    return tx;
-  } catch (err) {
-    console.error("❌ Error preparing transaction:", err.message);
-    return null;
+    transaction.sign(keypair);
+    const res = await server.submitTransaction(transaction);
+    console.log(`✅ [${bot.name}] Sent ${bot.amount} Pi | TX: ${res.hash}`);
+    statusMap[bot.name] = true;
+  } catch (e) {
+    const errorMsg = e?.response?.data?.extras?.result_codes?.operations || e.message;
+    console.log(`❌ [${bot.name}] Failed (Attempt ${attempt}): ${errorMsg}`);
+    await send(bot, attempt + 1); // Retry immediately
   }
 }
 
-function waitUntil(targetTime, callback) {
-  const now = moment.tz("Africa/Lagos");
-  const diff = targetTime.diff(now);
-  if (diff <= 0) return callback();
-  console.log(`⏳ Waiting ${diff}ms until ${targetTime.format("HH:mm:ss.SSS")}`);
-  setTimeout(callback, diff);
-}
+function checkTime() {
+  const now = new Date();
+  const [h, m, s] = [now.getHours(), now.getMinutes(), now.getSeconds()];
 
-async function runBot(botConfig) {
-  const targetTime = moment.tz(botConfig.time, "Africa/Lagos");
-  const transaction = await prepareTransaction(botConfig.secret, botConfig.target);
+  bots.forEach(bot => {
+    if (
+      parseInt(bot.hour) === h &&
+      parseInt(bot.minute) === m &&
+      parseInt(bot.second) === s &&
+      !statusMap[bot.name]
+    ) {
+      console.log(`🕓 [${bot.name}] Time matched! Sending ${bot.amount} Pi...`);
+      send(bot);
+    }
 
-  if (!transaction) return;
-
-  waitUntil(targetTime, async () => {
-    try {
-      const txResult = await server.submitTransaction(transaction);
-      console.log(`✅ Transaction successful for ${botConfig.target}:`, txResult.hash);
-    } catch (err) {
-      console.error("❌ Transaction failed:", err.response?.data || err.message);
+    // Reset status daily at 00:00:00
+    if (h === 0 && m === 0 && s === 0) {
+      statusMap[bot.name] = false;
     }
   });
 }
 
-async function startBots() {
-  const config = JSON.parse(fs.readFileSync("bot.json"));
-  for (const bot of config) {
-    runBot(bot);
-  }
-}
-
-startBots();
+// Check every second
+setInterval(checkTime, 1000);
+console.log("🟢 Multi-bot is running...");
