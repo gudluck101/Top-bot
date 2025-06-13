@@ -1,131 +1,62 @@
-const fs = require('fs');
-const path = require('path');
-const express = require('express');
-const StellarSdk = require('@stellar/stellar-sdk');
+const fs = require("fs");
+const { Server, Keypair, TransactionBuilder, Networks, Operation } = require("@stellar/stellar-sdk");
+const moment = require("moment-timezone");
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
+const server = new Server("https://api.mainnet.minepi.com");
 
-// Load bots from bot.json
-const bots = JSON.parse(fs.readFileSync(path.join(__dirname, 'bot.json'), 'utf-8'));
-
-const botStates = {};
-
-// Initialize bot states
-bots.forEach(bot => {
-  botStates[bot.name] = {
-    prepared: false,
-    done: false,
-    claimables: [],
-    tx: null,
-    lastPrepareTime: null
-  };
-});
-
-async function prepareTransaction(bot) {
-  const state = botStates[bot.name];
-
+async function prepareTransaction(secret, targetAddress) {
   try {
-    const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
-    const account = await server.loadAccount(bot.public);
-    const balances = await server.claimableBalances().claimant(bot.public).call();
+    const sourceKeypair = Keypair.fromSecret(secret);
+    const sourcePublicKey = sourceKeypair.publicKey();
 
-    const claimables = balances.records.map(r => r.id);
-    state.claimables = claimables;
-
-    if (claimables.length === 0) {
-      console.log(`⚠️  [${bot.name}] No claimable balances.`);
-      return;
-    }
-
+    const account = await server.loadAccount(sourcePublicKey);
     const fee = await server.fetchBaseFee();
-    const txBuilder = new StellarSdk.TransactionBuilder(account, {
+
+    const tx = new TransactionBuilder(account, {
       fee: fee.toString(),
-      networkPassphrase: 'Pi Network'
-    });
+      networkPassphrase: Networks.PI_MAINNET
+    })
+      .addOperation(Operation.claimClaimableBalance({ balanceId: "TODO_YOUR_BALANCE_ID" }))
+      .setTimeout(180)
+      .build();
 
-    claimables.forEach(id => {
-      txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({ balanceId: id }));
-    });
-
-    const tx = txBuilder.setTimeout(60).build();
-    tx.sign(keypair);
-
-    state.tx = tx;
-    state.prepared = true;
-    state.done = false;
-    state.lastPrepareTime = new Date();
-
-    console.log(`🔐 [${bot.name}] Prepared ${claimables.length} claimables.`);
-  } catch (e) {
-    console.error(`❌ [${bot.name}] Prepare failed: ${e.message}`);
+    tx.sign(sourceKeypair);
+    return tx;
+  } catch (err) {
+    console.error("❌ Error preparing transaction:", err.message);
+    return null;
   }
 }
 
-async function submitTransaction(bot) {
-  const state = botStates[bot.name];
-
-  if (!state.tx || state.done) return;
-
-  try {
-    const result = await server.submitTransaction(state.tx);
-    console.log(`✅ [${bot.name}] Claimed ${state.claimables.length} | TX: ${result.hash}`);
-  } catch (e) {
-    const msg = e?.response?.data?.extras?.result_codes?.operations ||
-      e?.response?.data?.extras?.result_codes?.transaction ||
-      e.message;
-    console.error(`❌ [${bot.name}] Claim failed: ${msg}`);
-  }
-
-  state.done = true;
-  state.prepared = false;
-  state.tx = null;
+function waitUntil(targetTime, callback) {
+  const now = moment.tz("Africa/Lagos");
+  const diff = targetTime.diff(now);
+  if (diff <= 0) return callback();
+  console.log(`⏳ Waiting ${diff}ms until ${targetTime.format("HH:mm:ss.SSS")}`);
+  setTimeout(callback, diff);
 }
 
-function getNigeriaTime() {
-  const now = new Date();
-  now.setUTCHours(now.getUTCHours() + 1); // Nigeria is UTC+1
-  return now;
-}
+async function runBot(botConfig) {
+  const targetTime = moment.tz(botConfig.time, "Africa/Lagos");
+  const transaction = await prepareTransaction(botConfig.secret, botConfig.target);
 
-// Main interval loop
-setInterval(() => {
-  const now = getNigeriaTime();
+  if (!transaction) return;
 
-  bots.forEach(bot => {
-    const state = botStates[bot.name];
-
-    const target = new Date(now);
-    target.setHours(bot.hour, bot.minute, bot.second, bot.millisecond);
-
-    const timeDiff = target - now;
-
-    // ⏱ Prepare transaction ~15 sec ahead of time
-    if (!state.prepared && timeDiff > 0 && timeDiff < 15000) {
-      prepareTransaction(bot);
-    }
-
-    // 🚀 Submit transaction at exact time
-    if (
-      !state.done &&
-      state.prepared &&
-      now.getHours() === bot.hour &&
-      now.getMinutes() === bot.minute &&
-      now.getSeconds() === bot.second &&
-      now.getMilliseconds() >= bot.millisecond
-    ) {
-      console.log(`🕒 [${bot.name}] Submitting transaction.`);
-      submitTransaction(bot);
+  waitUntil(targetTime, async () => {
+    try {
+      const txResult = await server.submitTransaction(transaction);
+      console.log(`✅ Transaction successful for ${botConfig.target}:`, txResult.hash);
+    } catch (err) {
+      console.error("❌ Transaction failed:", err.response?.data || err.message);
     }
   });
-}, 500); // 0.5s loop for more accurate timing
+}
 
-// Health check route for Render
-app.get('/', (_, res) => {
-  res.send('🟢 Pi Claim Bot is running.');
-});
+async function startBots() {
+  const config = JSON.parse(fs.readFileSync("bot.json"));
+  for (const bot of config) {
+    runBot(bot);
+  }
+}
 
-app.listen(PORT, () => {
-  console.log(`🌐 Listening on port ${PORT}`);
-});
+startBots();
