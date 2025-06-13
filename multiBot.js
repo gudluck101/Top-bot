@@ -1,8 +1,13 @@
 const fs = require('fs');
 const http = require('http');
-const StellarSdk = require('@stellar/stellar-sdk');
+const {
+  Server,
+  Keypair,
+  TransactionBuilder,
+  Operation
+} = require('@stellar/stellar-sdk');
 
-const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
+const server = new Server('https://api.mainnet.minepi.com');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 
 const botStates = {};
@@ -30,21 +35,21 @@ function logFailure(botName, reason) {
 async function prepare(bot) {
   const state = botStates[bot.name];
   try {
-    const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
+    const keypair = Keypair.fromSecret(bot.secret);
     const account = await server.loadAccount(bot.public);
     const balances = await server.claimableBalances().claimant(bot.public).call();
 
     state.claimables = balances.records.map(r => r.id);
     const fee = await server.fetchBaseFee();
 
-    const txBuilder = new StellarSdk.TransactionBuilder(account, {
-      fee: fee.toString(), // string required in v12+
-      networkPassphrase: 'Pi Network', // keep custom for Pi
+    const txBuilder = new TransactionBuilder(account, {
+      fee: fee.toString(),
+      networkPassphrase: 'Pi Network',
     });
 
     for (const id of state.claimables) {
       txBuilder.addOperation(
-        StellarSdk.Operation.claimClaimableBalance({ balanceId: id })
+        Operation.claimClaimableBalance({ balanceId: id })
       );
     }
 
