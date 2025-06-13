@@ -9,7 +9,6 @@ const {
 
 const server = new Server('https://api.mainnet.minepi.com');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
-
 const botStates = {};
 
 bots.forEach(bot => {
@@ -19,6 +18,7 @@ bots.forEach(bot => {
     claimables: [],
     claimTx: null,
     resetToday: false,
+    retryCount: 0,
   };
 });
 
@@ -81,17 +81,28 @@ async function submitClaim(bot) {
     console.log(`✅ [${bot.name}] Claimed ${state.claimables.length} | TX: ${res.hash}`);
     logSuccess(bot.name, res.hash, state.claimables.length);
     state.done = true;
+    state.retryCount = 0;
   } catch (e) {
     const msg =
       e?.response?.data?.extras?.result_codes?.operations ||
       e?.response?.data?.extras?.result_codes?.transaction ||
       e.message;
+
     console.log(`❌ [${bot.name}] Claim failed: ${msg}`);
     logFailure(bot.name, msg);
-    state.done = true;
+
+    state.retryCount++;
+    if (state.retryCount < 3) {
+      console.log(`🔁 [${bot.name}] Retrying claim (attempt ${state.retryCount})...`);
+      setTimeout(() => submitClaim(bot), 2000);
+    } else {
+      console.log(`⛔ [${bot.name}] Max retries reached.`);
+      state.done = true;
+    }
   }
 }
 
+// Claim scheduling
 setInterval(() => {
   const now = new Date();
   const h = (now.getUTCHours() + 1) % 24; // Nigeria time (UTC+1)
@@ -106,6 +117,7 @@ setInterval(() => {
     const bms = parseInt(bot.ms || 0);
     const state = botStates[bot.name];
 
+    // Daily reset at 00:00:00 Nigeria time
     if (!state.resetToday && h === 0 && m === 0 && s < 2) {
       Object.assign(state, {
         prepared: false,
@@ -113,15 +125,18 @@ setInterval(() => {
         claimables: [],
         claimTx: null,
         resetToday: true,
+        retryCount: 0,
       });
       console.log(`🔁 [${bot.name}] Daily reset.`);
       prepare(bot);
     }
 
+    // Reset flag after 00:00
     if (h > 0 && state.resetToday) {
       state.resetToday = false;
     }
 
+    // Prepare transaction if we're within 10 seconds before scheduled claim
     if (
       !state.prepared &&
       (h > bh || (h === bh && m > bm) || (h === bh && m === bm && s >= bs - 10))
@@ -129,6 +144,7 @@ setInterval(() => {
       prepare(bot);
     }
 
+    // Claim when exact time matches (with ±150ms tolerance)
     if (
       h === bh &&
       m === bm &&
@@ -142,8 +158,6 @@ setInterval(() => {
     }
   });
 }, 100);
-
-console.log('🟢 Pi Claim-Only Bot is running…');
 
 // Optional HTTP server
 const PORT = process.env.PORT || 3000;
