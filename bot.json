@@ -5,8 +5,8 @@
     "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "amount": "1",
-    "hour": 12,
-    "minute": 55,
+    "hour": 13,
+    "minute": 5,
     "second": 0
   },
   {
@@ -15,18 +15,18 @@
     "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "amount": "2",
-    "hour": 12,
-    "minute": 55,
+    "hour": 13,
+    "minute": 5,
     "second": 0
   },
-   {
+  {
     "name": "wallet3",
     "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "amount": "3",
-    "hour": 12,
-    "minute": 55,
+    "hour": 13,
+    "minute": 5,
     "second": 0
-   }
+  }
 ]
