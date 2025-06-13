@@ -1,19 +1,15 @@
 const fs = require('fs');
 const http = require('http');
-const StellarSdk = require('stellar-sdk');
+const StellarSdk = require('@stellar/stellar-sdk');
 
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
-
-const retryLimit = 10;
-const retryDelay = 1500;
 
 const botStates = {};
 
 bots.forEach(bot => {
   botStates[bot.name] = {
     prepared: false,
-    retries: 0,
     done: false,
     claimables: [],
     claimTx: null,
@@ -21,15 +17,22 @@ bots.forEach(bot => {
   };
 });
 
+function logSuccess(botName, hash, count) {
+  const log = `[${new Date().toISOString()}] ✅ [${botName}] Claimed ${count} | TX: ${hash}\n`;
+  fs.appendFileSync('success.log', log);
+}
+
+function logFailure(botName, reason) {
+  const log = `[${new Date().toISOString()}] ❌ [${botName}] Claim failed: ${reason}\n`;
+  fs.appendFileSync('fail.log', log);
+}
+
 async function prepare(bot) {
   const state = botStates[bot.name];
   try {
     const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
     const account = await server.loadAccount(bot.public);
-    const balances = await server
-      .claimableBalances()
-      .claimant(bot.public)
-      .call();
+    const balances = await server.claimableBalances().claimant(bot.public).call();
 
     state.claimables = balances.records.map(r => r.id);
     const fee = await server.fetchBaseFee();
@@ -55,15 +58,13 @@ async function prepare(bot) {
     state.prepared = true;
   } catch (e) {
     console.log(`❌ [${bot.name}] Prepare failed: ${e.message}`);
-    setTimeout(() => prepare(bot), 5000);
+    logFailure(bot.name, `Prepare failed: ${e.message}`);
   }
 }
 
 async function submitClaim(bot) {
   const state = botStates[bot.name];
-  if (state.done || state.retries >= retryLimit) return;
-
-  if (!state.claimTx) {
+  if (state.done || !state.claimTx) {
     console.log(`⚠️ [${bot.name}] No claim TX to submit.`);
     state.done = true;
     return;
@@ -72,17 +73,13 @@ async function submitClaim(bot) {
   try {
     const res = await server.submitTransaction(state.claimTx);
     console.log(`✅ [${bot.name}] Claimed ${state.claimables.length} | TX: ${res.hash}`);
+    logSuccess(bot.name, res.hash, state.claimables.length);
     state.done = true;
   } catch (e) {
-    state.retries++;
     const msg = e?.response?.data?.extras?.result_codes?.operations || e.message;
-    console.log(`❌ [${bot.name}] Claim retry ${state.retries}: ${msg}`);
-    if (state.retries < retryLimit) {
-      setTimeout(() => submitClaim(bot), retryDelay);
-    } else {
-      console.log(`🛑 [${bot.name}] Claim failed after ${retryLimit} retries.`);
-      state.done = true;
-    }
+    console.log(`❌ [${bot.name}] Claim failed: ${msg}`);
+    logFailure(bot.name, msg);
+    state.done = true;
   }
 }
 
@@ -105,7 +102,6 @@ setInterval(() => {
       Object.assign(state, {
         prepared: false,
         done: false,
-        retries: 0,
         claimables: [],
         claimTx: null,
         resetToday: true,
