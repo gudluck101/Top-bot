@@ -1,8 +1,15 @@
 const fs = require('fs');
-const http = require('http');
+const path = require('path');
+const express = require('express');
 const StellarSdk = require('@stellar/stellar-sdk');
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
-const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
+
+// ✅ Adjust paths for Render (write logs to /tmp)
+const BOT_FILE = path.join(__dirname, 'bot.json');
+const SUCCESS_LOG = '/tmp/success.log';
+const FAIL_LOG = '/tmp/fail.log';
+
+const bots = JSON.parse(fs.readFileSync(BOT_FILE, 'utf-8'));
 
 const botStates = {};
 
@@ -18,12 +25,12 @@ bots.forEach(bot => {
 
 function logSuccess(botName, hash, count) {
   const log = `[${new Date().toISOString()}] ✅ [${botName}] Claimed ${count} | TX: ${hash}\n`;
-  fs.appendFileSync('success.log', log);
+  fs.appendFileSync(SUCCESS_LOG, log);
 }
 
 function logFailure(botName, reason) {
   const log = `[${new Date().toISOString()}] ❌ [${botName}] Claim failed: ${reason}\n`;
-  fs.appendFileSync('fail.log', log);
+  fs.appendFileSync(FAIL_LOG, log);
 }
 
 async function prepare(bot) {
@@ -87,6 +94,7 @@ async function submitClaim(bot) {
   state.done = true;
 }
 
+// ⏱️ Run the loop every second
 setInterval(() => {
   const now = new Date();
   const h = (now.getUTCHours() + 1) % 24;
@@ -135,12 +143,14 @@ setInterval(() => {
   });
 }, 1000);
 
-console.log('🟢 Pi Claim Bot is running…');
-
+// ✅ Express server for Render health check
+const app = express();
 const PORT = process.env.PORT || 3000;
-http
-  .createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('🟢 Pi Claim Bot is running.\n');
-  })
-  .listen(PORT, () => console.log(`🌐 Listening on port ${PORT}`));
+
+app.get('/', (req, res) => {
+  res.send('🟢 Pi Claim Bot is running.\n');
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 Listening on port ${PORT}`);
+});
