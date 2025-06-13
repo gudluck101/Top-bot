@@ -7,6 +7,6 @@
     "start": "node multiBot.js"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "10.5.1"
+    "@stellar/stellar-sdk": "10.6.0"
   }
 }
