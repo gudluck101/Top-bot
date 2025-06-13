@@ -1,14 +1,8 @@
 const fs = require('fs');
 const http = require('http');
-const {
-  Server,
-  Keypair,
-  TransactionBuilder,
-  Operation,
-  Networks,
-} = require('@stellar/stellar-sdk');
+const StellarSdk = require('@stellar/stellar-sdk');
 
-const server = new Server('https://api.mainnet.minepi.com');
+const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 
 const botStates = {};
@@ -36,28 +30,28 @@ function logFailure(botName, reason) {
 async function prepare(bot) {
   const state = botStates[bot.name];
   try {
-    const keypair = Keypair.fromSecret(bot.secret);
+    const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
     const account = await server.loadAccount(bot.public);
     const balances = await server.claimableBalances().claimant(bot.public).call();
 
     state.claimables = balances.records.map(r => r.id);
     const fee = await server.fetchBaseFee();
 
-    const txBuilder = new TransactionBuilder(account, {
+    const txBuilder = new StellarSdk.TransactionBuilder(account, {
       fee: fee.toString(),
       networkPassphrase: 'Pi Network',
     });
 
     for (const id of state.claimables) {
       txBuilder.addOperation(
-        Operation.claimClaimableBalance({ balanceId: id })
+        StellarSdk.Operation.claimClaimableBalance({ balanceId: id })
       );
     }
 
     state.claimTx = state.claimables.length > 0 ? txBuilder.setTimeout(60).build() : null;
     if (state.claimTx) {
       state.claimTx.sign(keypair);
-      console.log(`🔐 [${bot.name}] Signed claim TX for ${state.claimables.length} claimables.`);
+      console.log(`🔐 [${bot.name}] Prepared TX for ${state.claimables.length} claimables.`);
     } else {
       console.log(`⚠️ [${bot.name}] No claimable balances found.`);
     }
@@ -72,7 +66,7 @@ async function prepare(bot) {
 async function submitClaim(bot) {
   const state = botStates[bot.name];
   if (state.done || !state.claimTx) {
-    console.log(`⚠️ [${bot.name}] No claim TX to submit.`);
+    console.log(`⚠️ [${bot.name}] No TX to submit.`);
     state.done = true;
     return;
   }
@@ -81,7 +75,6 @@ async function submitClaim(bot) {
     const res = await server.submitTransaction(state.claimTx);
     console.log(`✅ [${bot.name}] Claimed ${state.claimables.length} | TX: ${res.hash}`);
     logSuccess(bot.name, res.hash, state.claimables.length);
-    state.done = true;
   } catch (e) {
     const msg =
       e?.response?.data?.extras?.result_codes?.operations ||
@@ -89,8 +82,9 @@ async function submitClaim(bot) {
       e.message;
     console.log(`❌ [${bot.name}] Claim failed: ${msg}`);
     logFailure(bot.name, msg);
-    state.done = true;
   }
+
+  state.done = true;
 }
 
 setInterval(() => {
@@ -98,15 +92,14 @@ setInterval(() => {
   const h = (now.getUTCHours() + 1) % 24; // Nigeria time (UTC+1)
   const m = now.getUTCMinutes();
   const s = now.getUTCSeconds();
-  const ms = now.getUTCMilliseconds();
 
   bots.forEach(bot => {
     const bh = parseInt(bot.hour);
     const bm = parseInt(bot.minute);
     const bs = parseInt(bot.second);
-    const bms = parseInt(bot.ms || 0);
     const state = botStates[bot.name];
 
+    // Daily reset at 00:00 Nigeria time
     if (!state.resetToday && h === 0 && m === 0 && s < 2) {
       Object.assign(state, {
         prepared: false,
@@ -123,6 +116,7 @@ setInterval(() => {
       state.resetToday = false;
     }
 
+    // Prepare ahead of claim time
     if (
       !state.prepared &&
       (h > bh || (h === bh && m > bm) || (h === bh && m === bm && s >= bs - 10))
@@ -130,21 +124,21 @@ setInterval(() => {
       prepare(bot);
     }
 
+    // Submit when exact match
     if (
       h === bh &&
       m === bm &&
       s === bs &&
-      Math.abs(ms - bms) < 150 &&
       state.prepared &&
       !state.done
     ) {
-      console.log(`🕓 [${bot.name}] Time matched. Submitting claim.`);
+      console.log(`🕓 [${bot.name}] Submitting claim.`);
       submitClaim(bot);
     }
   });
-}, 100);
+}, 1000);
 
-console.log('🟢 Pi Claim-Only Bot is running…');
+console.log('🟢 Pi Claim Bot is running…');
 
 // Optional HTTP server
 const PORT = process.env.PORT || 3000;
@@ -153,4 +147,4 @@ http
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('🟢 Pi Claim Bot is running.\n');
   })
-  .listen(PORT, () => console.log(`🌐 HTTP server on port ${PORT}`));
+  .listen(PORT, () => console.log(`🌐 Listening on port ${PORT}`));
