@@ -36,16 +36,17 @@ async function prepare(bot) {
 
     state.claimables = balances.records.map(r => r.id);
     const fee = await server.fetchBaseFee();
+
     const txBuilder = new StellarSdk.TransactionBuilder(account, {
-      fee,
-      networkPassphrase: 'Pi Network',
+      fee: fee.toString(), // string required in v12+
+      networkPassphrase: 'Pi Network', // keep custom for Pi
     });
 
-    state.claimables.forEach(id => {
+    for (const id of state.claimables) {
       txBuilder.addOperation(
         StellarSdk.Operation.claimClaimableBalance({ balanceId: id })
       );
-    });
+    }
 
     state.claimTx = state.claimables.length > 0 ? txBuilder.setTimeout(60).build() : null;
     if (state.claimTx) {
@@ -76,14 +77,16 @@ async function submitClaim(bot) {
     logSuccess(bot.name, res.hash, state.claimables.length);
     state.done = true;
   } catch (e) {
-    const msg = e?.response?.data?.extras?.result_codes?.operations || e.message;
+    const msg =
+      e?.response?.data?.extras?.result_codes?.operations ||
+      e?.response?.data?.extras?.result_codes?.transaction ||
+      e.message;
     console.log(`❌ [${bot.name}] Claim failed: ${msg}`);
     logFailure(bot.name, msg);
     state.done = true;
   }
 }
 
-// Time check loop
 setInterval(() => {
   const now = new Date();
   const h = (now.getUTCHours() + 1) % 24; // Nigeria time (UTC+1)
