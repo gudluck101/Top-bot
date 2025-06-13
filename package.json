@@ -1,12 +1,11 @@
 {
-  "name": "top-bot",
+  "name": "pi-auto-transfer",
   "version": "1.0.0",
+  "main": "multiBot.js",
   "scripts": {
     "start": "node multiBot.js"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "10.6.0",
-    "express": "^4.18.2",
-    "moment-timezone": "^0.5.40"
+    "stellar-sdk": "^10.4.0"
   }
 }
