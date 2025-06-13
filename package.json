@@ -4,7 +4,7 @@
   "main": "multiBot.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node multiBot.js"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "10.5.1"
