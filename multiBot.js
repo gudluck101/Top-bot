@@ -71,7 +71,7 @@ async function submitAll() {
   for (let bot of bots) {
     console.log(`🚀 Sending [${bot.name}]...`);
     await submit(bot);
-    await new Promise(res => setTimeout(res, 1000)); // 1s gap
+    await new Promise(res => setTimeout(res, 0)); // 0s gap
   }
 }
 
