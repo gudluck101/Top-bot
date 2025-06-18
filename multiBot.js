@@ -5,14 +5,11 @@ const StellarSdk = require('stellar-sdk');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-const ONE_PI_IN_STROOPS = "10000000";
 let executed = false;
 let triggeredTimeMs = null;
-
-// Cache for live sequences
 const latestSequences = {};
 
-// Horizon live stream for each bot
+// Horizon live stream per bot
 for (let bot of bots) {
   server.accounts()
     .accountId(bot.public)
@@ -29,7 +26,7 @@ for (let bot of bots) {
     });
 }
 
-// Convert bot time to UTC timestamp (ms)
+// Convert bot trigger time to UTC milliseconds
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -39,7 +36,7 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Send transaction with 5 immediate retries
+// Main transaction logic
 async function send(bot) {
   const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
 
@@ -50,10 +47,16 @@ async function send(bot) {
 
       const account = new StellarSdk.Account(bot.public, cached.sequence);
 
+      const baseFeeStroops = Math.floor(parseFloat(bot.baseFeePi || "0.005") * 10000000);
+      const totalFee = (baseFeeStroops * 2).toString(); // 2 operations
+
       const tx = new StellarSdk.TransactionBuilder(account, {
-        fee: ONE_PI_IN_STROOPS,
+        fee: totalFee,
         networkPassphrase: 'Pi Network',
       })
+        .addOperation(StellarSdk.Operation.claimClaimableBalance({
+          balanceId: bot.claimId
+        }))
         .addOperation(StellarSdk.Operation.payment({
           destination: bot.destination,
           asset: StellarSdk.Asset.native(),
@@ -64,11 +67,11 @@ async function send(bot) {
 
       tx.sign(keypair);
       const res = await server.submitTransaction(tx);
-      console.log(`✅ [${bot.name}] Sent ${bot.amount} Pi | TX: ${res.hash}`);
+      console.log(`✅ [${bot.name}] Claimed + Sent ${bot.amount} Pi | TX: ${res.hash}`);
       return;
     } catch (e) {
-      const errorMsg = e?.response?.data?.extras?.result_codes?.operations || e.message;
-      console.log(`❌ [${bot.name}] Attempt ${attempt} failed: ${errorMsg}`);
+      const errorMsg = e?.response?.data?.extras?.result_codes || e.message;
+      console.log(`❌ [${bot.name}] Attempt ${attempt} failed: ${JSON.stringify(errorMsg)}`);
       if (attempt === 5) {
         console.log(`🛑 [${bot.name}] All 5 attempts failed.`);
       }
@@ -76,7 +79,7 @@ async function send(bot) {
   }
 }
 
-// Run all bots in sequence
+// Run all bots one after another
 async function runBotsSequentially() {
   for (let bot of bots) {
     console.log(`🚀 Running [${bot.name}]...`);
@@ -84,7 +87,7 @@ async function runBotsSequentially() {
   }
 }
 
-// Trigger every 100ms (UTC check)
+// Time-based trigger loop
 setInterval(() => {
   if (executed) return;
 
@@ -113,7 +116,7 @@ setInterval(() => {
   }
 }, 100);
 
-// Express server for monitoring
+// Simple web monitor
 const app = express();
 const PORT = process.env.PORT || 3000;
 
