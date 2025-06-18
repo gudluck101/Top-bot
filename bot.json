@@ -1,13 +1,15 @@
 [
   {
-    "name": "wallet1",
-    "public": "GBDDTNKX7BTTUQV4J2YMSMSD6TXNOACH4GWQ6DQ7SPF5SEPQYSGJ7EAC",
-    "secret": "SDDUWLWMOJ5D6QAQHJGFS6FKFE4KB57HLT43JNWAH33TC2VCX6KS3UY7",
-    "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
-    "amount": "29",
-    "hour": "12",
+    "name": "Bot 1",
+    "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
+    "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
+    "destination": "GBDDTNKX7BTTUQV4J2YMSMSD6TXNOACH4GWQ6DQ7SPF5SEPQYSGJ7EAC",
+    "amount": "100",
+    "claimId": "0000000075b5279d9618e29aaf8e1a8fbc2f598e493cd8645245ce78b3f48c1c8ed0c61a",
+    "hour": "18",
     "minute": "36",
-    "second": "21",
-    "millisecond": "0"
+    "second": "26",
+    "millisecond": "0",
+    "baseFeePi": "0.0001"
   }
-    ]
+]
