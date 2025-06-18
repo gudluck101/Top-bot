@@ -5,10 +5,31 @@ const StellarSdk = require('stellar-sdk');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-let executed = false; // Flag to run all bots once
+const ONE_PI_IN_STROOPS = "10000000";
+let executed = false;
 let triggeredTimeMs = null;
 
-// Helper to parse bot time
+// Cache for live sequences
+const latestSequences = {};
+
+// Horizon live stream for each bot
+for (let bot of bots) {
+  server.accounts()
+    .accountId(bot.public)
+    .stream({
+      onmessage: account => {
+        latestSequences[bot.public] = {
+          sequence: account.sequence,
+          updatedAt: new Date()
+        };
+      },
+      onerror: err => {
+        console.error(`🔌 Horizon stream error for ${bot.name}:`, err.message);
+      }
+    });
+}
+
+// Convert bot time to UTC timestamp (ms)
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -18,77 +39,88 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Send function (no retry)
+// Send transaction with 5 immediate retries
 async function send(bot) {
-  try {
-    const account = await server.loadAccount(bot.public);
-    const fee = await server.fetchBaseFee();
-    const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
+  const keypair = StellarSdk.Keypair.fromSecret(bot.secret);
 
-    const tx = new StellarSdk.TransactionBuilder(account, {
-      fee,
-      networkPassphrase: 'Pi Network',
-    })
-      .addOperation(StellarSdk.Operation.payment({
-        destination: bot.destination,
-        asset: StellarSdk.Asset.native(),
-        amount: bot.amount,
-      }))
-      .setTimeout(60)
-      .build();
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const cached = latestSequences[bot.public];
+      if (!cached) throw new Error(`Missing live sequence for ${bot.name}`);
 
-    tx.sign(keypair);
-    const res = await server.submitTransaction(tx);
-    console.log(`✅ [${bot.name}] Sent ${bot.amount} Pi | TX: ${res.hash}`);
-  } catch (e) {
-    const errorMsg = e?.response?.data?.extras?.result_codes?.operations || e.message;
-    console.log(`❌ [${bot.name}] Failed: ${errorMsg}`);
+      const account = new StellarSdk.Account(bot.public, cached.sequence);
+
+      const tx = new StellarSdk.TransactionBuilder(account, {
+        fee: ONE_PI_IN_STROOPS,
+        networkPassphrase: 'Pi Network',
+      })
+        .addOperation(StellarSdk.Operation.payment({
+          destination: bot.destination,
+          asset: StellarSdk.Asset.native(),
+          amount: bot.amount,
+        }))
+        .setTimeout(60)
+        .build();
+
+      tx.sign(keypair);
+      const res = await server.submitTransaction(tx);
+      console.log(`✅ [${bot.name}] Sent ${bot.amount} Pi | TX: ${res.hash}`);
+      return;
+    } catch (e) {
+      const errorMsg = e?.response?.data?.extras?.result_codes?.operations || e.message;
+      console.log(`❌ [${bot.name}] Attempt ${attempt} failed: ${errorMsg}`);
+      if (attempt === 5) {
+        console.log(`🛑 [${bot.name}] All 5 attempts failed.`);
+      }
+    }
   }
 }
 
-// Run all bots sequentially
+// Run all bots in sequence
 async function runBotsSequentially() {
   for (let bot of bots) {
-    console.log(`🚀 Executing [${bot.name}]...`);
+    console.log(`🚀 Running [${bot.name}]...`);
     await send(bot);
-    await new Promise(res => setTimeout(res, 0)); // 1s delay between each
   }
 }
 
-// Check every 100ms
+// Trigger every 100ms (UTC check)
 setInterval(() => {
   if (executed) return;
 
   const now = new Date();
-  const nowMs = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000 + now.getMilliseconds();
+  const nowMs =
+    now.getUTCHours() * 3600000 +
+    now.getUTCMinutes() * 60000 +
+    now.getUTCSeconds() * 1000 +
+    now.getUTCMilliseconds();
 
   const firstBot = bots[0];
   const botTimeMs = getBotTimestamp(firstBot);
   const diff = Math.abs(nowMs - botTimeMs);
 
   if (diff <= 200) {
-    console.log(`⏰ [${firstBot.name}] Time matched. Starting sequence...`);
+    console.log(`⏰ Time matched for [${firstBot.name}]. Executing bots...`);
     triggeredTimeMs = nowMs;
     executed = true;
     runBotsSequentially();
   }
 
-  // Reset daily at 00:00:00
   if (nowMs < 1000) {
     executed = false;
     triggeredTimeMs = null;
-    console.log("🔄 Resetting for new day.");
+    console.log("🔄 New UTC day — reset executed flag.");
   }
 }, 100);
 
-// Start Express server for status check
+// Express server for monitoring
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-  res.send(`🟢 Multi-bot active. Triggered: ${executed ? 'Yes' : 'No'}`);
+  res.send(`🟢 Multi-bot status: Triggered = ${executed ? 'Yes' : 'No'}`);
 });
 
 app.listen(PORT, () => {
-  console.log(`🌐 Server running on port ${PORT}`);
+  console.log(`🌐 Express server running on port ${PORT}`);
 });
