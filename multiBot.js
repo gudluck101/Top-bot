@@ -6,23 +6,8 @@ const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
 let executed = false;
-const latestSequences = {};
 
-// Stream live sequence numbers
-for (let bot of bots) {
-  server.accounts()
-    .accountId(bot.public)
-    .stream({
-      onmessage: account => {
-        latestSequences[bot.public] = account.sequence;
-      },
-      onerror: err => {
-        console.error(`Stream error for ${bot.name}:`, err.message);
-      }
-    });
-}
-
-// Convert daily UTC time to ms
+// Convert time to UTC ms
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -32,28 +17,23 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Send transaction for a single bot
+// Main transaction logic
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
   for (let attempt = 1; attempt <= 10; attempt++) {
     try {
-      if (attempt > 1) await new Promise(res => setTimeout(res, 400)); // short retry delay
+      if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
-      // Always fetch the latest sequence
-      let sequence = latestSequences[bot.public];
-      if (!sequence) {
-        const account = await server.loadAccount(bot.public);
-        sequence = account.sequence;
-        latestSequences[bot.public] = sequence;
-      }
+      // Always fetch fresh account data for correct sequence
+      const accountData = await server.loadAccount(bot.public);
+      const account = new StellarSdk.Account(bot.public, accountData.sequence);
 
-      const account = new StellarSdk.Account(bot.public, sequence);
       const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
       const baseFeeStroops = Math.floor(baseFeePi * 1e7);
 
       const tx = new StellarSdk.TransactionBuilder(account, {
-        fee: (baseFeeStroops * 2).toString(),
+        fee: (baseFeeStroops * 2).toString(), // 2 operations
         networkPassphrase: 'Pi Network',
       })
         .addOperation(StellarSdk.Operation.claimClaimableBalance({
@@ -68,13 +48,13 @@ async function send(bot) {
         .build();
 
       tx.sign(botKey);
+
       const result = await server.submitTransaction(tx);
 
       if (result?.successful && result?.hash) {
         console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
         return;
       } else {
-        console.log(`⚠️ [${bot.name}] TX sent but may have failed:\n${JSON.stringify(result, null, 2)}`);
         throw new Error('TX not successful');
       }
 
@@ -91,10 +71,10 @@ async function send(bot) {
     }
   }
 
-  console.log(`❌ [${bot.name}] All 10 attempts failed.`);
+  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
-// Run all bots sequentially
+// Run all bots one-by-one
 async function runBotsSequentially() {
   for (const bot of bots) {
     console.log(`🚀 Running ${bot.name}...`);
@@ -102,7 +82,7 @@ async function runBotsSequentially() {
   }
 }
 
-// Check every 100ms for exact UTC time
+// Trigger by UTC time
 setInterval(() => {
   const now = new Date();
   const nowMs =
@@ -127,7 +107,7 @@ setInterval(() => {
   }
 }, 100);
 
-// Web status
+// Web interface for status
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.get('/', (req, res) => {
