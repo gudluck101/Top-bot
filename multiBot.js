@@ -8,7 +8,7 @@ const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 let executed = false;
 const latestSequences = {};
 
-// Stream live sequence numbers
+// Live sequence number stream
 for (let bot of bots) {
   server.accounts()
     .accountId(bot.public)
@@ -22,7 +22,7 @@ for (let bot of bots) {
     });
 }
 
-// Convert trigger time to UTC ms
+// Convert time to UTC ms
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -42,12 +42,12 @@ async function send(bot) {
       if (!sequence) throw new Error('Missing sequence for ' + bot.name);
 
       const account = new StellarSdk.Account(bot.public, sequence);
-      const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
-      const baseFeeStroops = Math.floor(baseFeePi * 10000000);
-      const totalFee = (baseFeeStroops * 2).toString(); // 2 operations
 
-      const tx = new StellarSdk.TransactionBuilder(account, {
-        fee: totalFee,
+      const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
+      const baseFeeStroops = Math.floor(baseFeePi * 1e7); // Convert Pi → stroops
+
+      const txBuilder = new StellarSdk.TransactionBuilder(account, {
+        fee: (baseFeeStroops * 2).toString(), // 2 operations
         networkPassphrase: 'Pi Network',
       })
         .addOperation(StellarSdk.Operation.claimClaimableBalance({
@@ -58,14 +58,14 @@ async function send(bot) {
           asset: StellarSdk.Asset.native(),
           amount: bot.amount,
         }))
-        .setTimeout(60)
-        .build();
+        .setTimeout(60);
 
+      const tx = txBuilder.build();
       tx.sign(botKey);
 
       const result = await server.submitTransaction(tx);
 
-      if (result && result.successful && result.hash) {
+      if (result?.successful && result?.hash) {
         console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
         return;
       } else {
@@ -87,7 +87,7 @@ async function send(bot) {
   }
 }
 
-// Run all bots sequentially
+// Run all bots in sequence
 async function runBotsSequentially() {
   for (const bot of bots) {
     console.log(`🚀 Running ${bot.name}...`);
@@ -95,7 +95,7 @@ async function runBotsSequentially() {
   }
 }
 
-// Time-based trigger
+// Trigger based on daily UTC time
 setInterval(() => {
   const now = new Date();
   const nowMs =
@@ -114,14 +114,13 @@ setInterval(() => {
     runBotsSequentially();
   }
 
-  // Reset daily
   if (nowMs < 1000) {
     executed = false;
     console.log("🔁 New UTC day — reset.");
   }
 }, 100);
 
-// Simple web monitor
+// Basic web UI for uptime check
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.get('/', (req, res) => {
