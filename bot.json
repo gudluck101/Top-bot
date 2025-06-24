@@ -10,6 +10,6 @@
     "minute": "32",
     "second": "0",
     "millisecond": "0",
-    "baseFeePi": "1"
+    "baseFeePi": "0.0001"
   }
 ]
