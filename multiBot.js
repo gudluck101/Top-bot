@@ -2,7 +2,7 @@ const fs = require('fs');
 const express = require('express');
 const StellarSdk = require('stellar-sdk');
 
-// Load bots and fee-payer wallet
+// Load bots and fee payer wallet
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const feeWallet = JSON.parse(fs.readFileSync('fee-wallet.json', 'utf-8'));
 
@@ -12,7 +12,7 @@ let executed = false;
 let triggeredTimeMs = null;
 const latestSequences = {};
 
-// Stream latest sequence for each bot
+// Horizon stream for live sequence number
 for (let bot of bots) {
   server.accounts()
     .accountId(bot.public)
@@ -26,7 +26,7 @@ for (let bot of bots) {
     });
 }
 
-// Convert bot time to UTC ms
+// Convert trigger time to milliseconds
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -36,7 +36,7 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Main transaction logic with fee bump and 10 attempts
+// Main transaction with fee bump and retry
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
   const feeKey = StellarSdk.Keypair.fromSecret(feeWallet.secret);
@@ -65,26 +65,33 @@ async function send(bot) {
 
       tx.sign(botKey);
 
-      // ✅ Create fee bump transaction (fee payer pays 1 Pi = 10,000,000 stroops)
+      // Build fee bump transaction: 1 Pi (10 million stroops)
       const feeBumpTx = StellarSdk.TransactionBuilder.buildFeeBumpTransaction(
-        feeKey, // fee source
-        '10000000', // 1 Pi
+        feeKey,             // fee-paying wallet
+        '10000000',         // 1 Pi
         tx,
-        'Pi Network'
+        'Pi Network'        // Pi Network passphrase
       );
 
       feeBumpTx.sign(feeKey);
 
       const result = await server.submitTransaction(feeBumpTx);
-      console.log(`✅ [${bot.name}] Success. TX Hash: ${result.hash}`);
+      console.log(`✅ [${bot.name}] Success! TX Hash: ${result.hash}`);
     } catch (e) {
-      const msg = e?.response?.data?.extras?.result_codes || e.message;
-      console.log(`❌ [${bot.name}] Attempt ${attempt} failed: ${JSON.stringify(msg)}`);
+      const err = e?.response?.data;
+      if (err) {
+        console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
+        console.log('🔍 Error title:', err.title);
+        console.log('🔍 Error detail:', err.detail);
+        console.log('🔍 Result codes:', JSON.stringify(err.extras?.result_codes));
+      } else {
+        console.log(`❌ [${bot.name}] Attempt ${attempt} failed:`, e.message);
+      }
     }
   }
 }
 
-// Run bots one by one
+// Run all bots
 async function runBotsSequentially() {
   for (const bot of bots) {
     console.log(`🚀 Running ${bot.name}...`);
@@ -92,7 +99,7 @@ async function runBotsSequentially() {
   }
 }
 
-// Loop: check every 100ms if it's time to run
+// Time-based loop to trigger at exact UTC time
 setInterval(() => {
   if (executed) return;
 
@@ -117,11 +124,11 @@ setInterval(() => {
   if (nowMs < 1000) {
     executed = false;
     triggeredTimeMs = null;
-    console.log("🔄 New UTC day: reset executed flag.");
+    console.log("🔄 New UTC day — reset executed flag.");
   }
 }, 100);
 
-// Web monitor
+// Simple express web monitor
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.get('/', (req, res) => {
