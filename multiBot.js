@@ -8,7 +8,7 @@ const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 let executed = false;
 const latestSequences = {};
 
-// Live stream to get sequence number
+// Stream live sequence numbers
 for (let bot of bots) {
   server.accounts()
     .accountId(bot.public)
@@ -22,7 +22,7 @@ for (let bot of bots) {
     });
 }
 
-// Convert bot's UTC time to milliseconds
+// Convert trigger time to UTC ms
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -62,14 +62,24 @@ async function send(bot) {
         .build();
 
       tx.sign(botKey);
+
       const result = await server.submitTransaction(tx);
 
-      console.log(`✅ [${bot.name}] TX Success: ${result.hash}`);
-      return;
+      if (result && result.successful && result.hash) {
+        console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
+        return;
+      } else {
+        console.log(`⚠️ [${bot.name}] TX sent but may have failed:\n${JSON.stringify(result, null, 2)}`);
+        throw new Error('TX not successful');
+      }
+
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
+
       if (e?.response?.data?.extras?.result_codes) {
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
+      } else if (e?.response?.data) {
+        console.log('🔍 Horizon error:', e.response.data);
       } else {
         console.log('🔍 Raw error:', e.message || e.toString());
       }
@@ -77,7 +87,7 @@ async function send(bot) {
   }
 }
 
-// Run all bots
+// Run all bots sequentially
 async function runBotsSequentially() {
   for (const bot of bots) {
     console.log(`🚀 Running ${bot.name}...`);
@@ -85,7 +95,7 @@ async function runBotsSequentially() {
   }
 }
 
-// Time-based trigger loop
+// Time-based trigger
 setInterval(() => {
   const now = new Date();
   const nowMs =
@@ -104,14 +114,14 @@ setInterval(() => {
     runBotsSequentially();
   }
 
-  // Reset once a day
+  // Reset daily
   if (nowMs < 1000) {
     executed = false;
     console.log("🔁 New UTC day — reset.");
   }
 }, 100);
 
-// Web monitor
+// Simple web monitor
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.get('/', (req, res) => {
