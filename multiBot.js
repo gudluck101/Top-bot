@@ -3,11 +3,12 @@ const express = require('express');
 const StellarSdk = require('stellar-sdk');
 
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
+const feeWallet = JSON.parse(fs.readFileSync('fee-wallet.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
 let executed = false;
 
-// Convert time to UTC ms
+// Get UTC timestamp in ms
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -17,28 +18,27 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Main transaction logic
+// Send transaction using fee bump
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
+  const feeKey = StellarSdk.Keypair.fromSecret(feeWallet.secret);
 
   for (let attempt = 1; attempt <= 10; attempt++) {
     try {
       if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
-      // Always fetch fresh account data for correct sequence
-      const accountData = await server.loadAccount(bot.public);
-      const account = new StellarSdk.Account(bot.public, accountData.sequence);
+      const botAccountData = await server.loadAccount(bot.public);
+      const botAccount = new StellarSdk.Account(bot.public, botAccountData.sequence);
 
-      const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
-      const baseFeeStroops = Math.floor(baseFeePi * 1e7);
+      const baseFeePi = parseFloat(feeWallet.baseFeePi || "0.00005");
+      const baseFeeStroops = Math.floor(baseFeePi * 1e7); // Pi → stroops
 
-      const tx = new StellarSdk.TransactionBuilder(account, {
-        fee: (baseFeeStroops * 2).toString(), // 2 operations
+      // Build inner transaction from bot
+      const innerTx = new StellarSdk.TransactionBuilder(botAccount, {
+        fee: (baseFeeStroops * 2).toString(),
         networkPassphrase: 'Pi Network',
       })
-        .addOperation(StellarSdk.Operation.claimClaimableBalance({
-          balanceId: bot.claimId
-        }))
+        .addOperation(StellarSdk.Operation.claimClaimableBalance({ balanceId: bot.claimId }))
         .addOperation(StellarSdk.Operation.payment({
           destination: bot.destination,
           asset: StellarSdk.Asset.native(),
@@ -47,9 +47,17 @@ async function send(bot) {
         .setTimeout(60)
         .build();
 
-      tx.sign(botKey);
+      innerTx.sign(botKey); // Bot signs its part
 
-      const result = await server.submitTransaction(tx);
+      // Wrap with fee bump transaction paid by feeWallet
+      const feeBumpTx = StellarSdk.TransactionBuilder.buildFeeBumpTransaction(
+        feeKey, // fee payer
+        baseFeeStroops.toString(), // per operation fee
+        innerTx,
+        'Pi Network'
+      );
+
+      const result = await server.submitTransaction(feeBumpTx);
 
       if (result?.successful && result?.hash) {
         console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
@@ -60,7 +68,6 @@ async function send(bot) {
 
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
-
       if (e?.response?.data?.extras?.result_codes) {
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
       } else if (e?.response?.data) {
@@ -82,7 +89,7 @@ async function runBotsSequentially() {
   }
 }
 
-// Trigger by UTC time
+// Time trigger
 setInterval(() => {
   const now = new Date();
   const nowMs =
@@ -107,7 +114,7 @@ setInterval(() => {
   }
 }, 100);
 
-// Web interface for status
+// Web interface
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.get('/', (req, res) => {
