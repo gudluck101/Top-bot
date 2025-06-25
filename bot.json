@@ -1,15 +1,15 @@
 [
   {
     "name": "Bot 1",
-    "public": "GBZ5YOAU7K4LI42WE4BXQLXNDOX52QXYRXOSYD4DCRS7HYMTFNPMD26C",
-    "secret": "SDRIG6UTTKQJB3XIPST3MYXD6UIFNNC7UIHXEDS27Y3J7BFZWRM7LIMR",
+    "public": "GAFSMVFP6545E5YJLUFGL3Y5MZ7JBLRQYEKXY7N2PPZFYCS734JTXYI5",
+    "secret": "SAI2OP6ASFBM2U6MZ4BIHQMQW7YUVIMUA45GPNE5WLWS6KRT54QWOCBI",
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
-    "amount": "32",
-    "claimId": "00000000ea3403921ec666d3995e03e2dff243548c213fd06d85f0331edbe6d80c296fb1",
-    "hour": "11",
-    "minute": "50",
-    "second": "30",
+    "amount": "677",
+    "claimId": "000000001a2ae3ee9269f656998039be42b1019f19686d62ebccbcfe7bb3057a70fc827e",
+    "hour": "15",
+    "minute": "54",
+    "second": "0",
     "millisecond": "0",
-    "baseFeePi": "0.05"
+    "baseFeePi": "0.005"
   }
 ]
