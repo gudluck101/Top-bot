@@ -5,9 +5,7 @@ const StellarSdk = require('stellar-sdk');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-let executed = false;
-
-// Convert time to UTC ms
+// Get bot's target timestamp in UTC ms
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -17,7 +15,7 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Main transaction logic
+// Send logic: first attempt claims and sends, retries only send
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
@@ -25,28 +23,30 @@ async function send(bot) {
     try {
       if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
-      // Always fetch fresh account data for correct sequence
       const accountData = await server.loadAccount(bot.public);
       const account = new StellarSdk.Account(bot.public, accountData.sequence);
 
       const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
       const baseFeeStroops = Math.floor(baseFeePi * 1e7);
 
-      const tx = new StellarSdk.TransactionBuilder(account, {
-        fee: (baseFeeStroops * 2).toString(), // 2 operations
+      const txBuilder = new StellarSdk.TransactionBuilder(account, {
+        fee: (baseFeeStroops * 2).toString(),
         networkPassphrase: 'Pi Network',
-      })
-        .addOperation(StellarSdk.Operation.claimClaimableBalance({
-          balanceId: bot.claimId
-        }))
-        .addOperation(StellarSdk.Operation.payment({
-          destination: bot.destination,
-          asset: StellarSdk.Asset.native(),
-          amount: bot.amount,
-        }))
-        .setTimeout(60)
-        .build();
+      });
 
+      if (attempt === 1) {
+        txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
+          balanceId: bot.claimId
+        }));
+      }
+
+      txBuilder.addOperation(StellarSdk.Operation.payment({
+        destination: bot.destination,
+        asset: StellarSdk.Asset.native(),
+        amount: bot.amount,
+      }));
+
+      const tx = txBuilder.setTimeout(60).build();
       tx.sign(botKey);
 
       const result = await server.submitTransaction(tx);
@@ -74,7 +74,7 @@ async function send(bot) {
   console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
-// Run all bots one-by-one
+// Sequential bot runner
 async function runBotsSequentially() {
   for (const bot of bots) {
     console.log(`🚀 Running ${bot.name}...`);
@@ -82,7 +82,9 @@ async function runBotsSequentially() {
   }
 }
 
-// Trigger by UTC time
+let executed = false;
+
+// Time-based trigger every 100ms
 setInterval(() => {
   const now = new Date();
   const nowMs =
@@ -107,12 +109,14 @@ setInterval(() => {
   }
 }, 100);
 
-// Web interface for status
+// Minimal web status server
 const app = express();
 const PORT = process.env.PORT || 10000;
+
 app.get('/', (req, res) => {
   res.send(`🟢 Bot status: Triggered = ${executed}`);
 });
+
 app.listen(PORT, () => {
   console.log(`🌍 Server running on port ${PORT}`);
 });
