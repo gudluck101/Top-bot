@@ -5,7 +5,7 @@ const StellarSdk = require('stellar-sdk');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-// Get bot's target timestamp in UTC ms
+// Convert time to UTC ms
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -15,7 +15,7 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Send logic: first attempt claims and sends, retries only send
+// Main bot logic
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
@@ -34,6 +34,7 @@ async function send(bot) {
         networkPassphrase: 'Pi Network',
       });
 
+      // First attempt: claim + send; retries: send only
       if (attempt === 1) {
         txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
           balanceId: bot.claimId
@@ -61,10 +62,13 @@ async function send(bot) {
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
 
+      // Detailed Horizon error logging
       if (e?.response?.data?.extras?.result_codes) {
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
       } else if (e?.response?.data) {
         console.log('🔍 Horizon error:', e.response.data);
+      } else if (e?.response) {
+        console.log('🔍 Response error:', e.response);
       } else {
         console.log('🔍 Raw error:', e.message || e.toString());
       }
@@ -74,7 +78,7 @@ async function send(bot) {
   console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
-// Sequential bot runner
+// Run bots one-by-one
 async function runBotsSequentially() {
   for (const bot of bots) {
     console.log(`🚀 Running ${bot.name}...`);
@@ -84,7 +88,7 @@ async function runBotsSequentially() {
 
 let executed = false;
 
-// Time-based trigger every 100ms
+// Time-based trigger
 setInterval(() => {
   const now = new Date();
   const nowMs =
@@ -109,7 +113,7 @@ setInterval(() => {
   }
 }, 100);
 
-// Minimal web status server
+// Web UI to monitor status
 const app = express();
 const PORT = process.env.PORT || 10000;
 
