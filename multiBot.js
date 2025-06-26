@@ -53,11 +53,11 @@ async function send(bot) {
       const result = await server.submitTransaction(tx);
 
       if (result?.successful && result?.hash) {
-        console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-        return;
-      } else {
-        throw new Error('TX not successful');
-      }
+  console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
+  // Do NOT return here — keep going to retry all attempts
+} else {
+  console.log(`❌ [${bot.name}] TX not successful`);
+}
 
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
