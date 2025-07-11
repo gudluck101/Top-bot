@@ -5,12 +5,7 @@ const StellarSdk = require('stellar-sdk');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-const app = express();
-const PORT = process.env.PORT || 10000;
-
-let executed = {}; // Track which bots have completed
-
-// Convert bot unlock time to UTC milliseconds
+// Convert bot trigger time to UTC ms
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -20,104 +15,143 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Get current UTC time in ms
-function getNowMs() {
-  const now = new Date();
-  return (
-    now.getUTCHours() * 3600000 +
-    now.getUTCMinutes() * 60000 +
-    now.getUTCSeconds() * 1000 +
-    now.getUTCMilliseconds()
-  );
+// Submit transaction for 1 bot
+async function send(bot) {
+  const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
+  let attempts = 0;
+  let lastErrorWasBadSeq = false;
+
+  while (attempts < 10) {
+    try {
+      if (attempts > 0 && !lastErrorWasBadSeq) {
+        console.log(`🔄 [${bot.name}] Waiting for next ledger...`);
+        await waitForNextLedger();
+      }
+
+      const accountData = await server.loadAccount(bot.public);
+      const account = new StellarSdk.Account(bot.public, accountData.sequence);
+
+      const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
+      const baseFeeStroops = Math.floor(baseFeePi * 1e7);
+
+      const txBuilder = new StellarSdk.TransactionBuilder(account, {
+        fee: (baseFeeStroops * 2).toString(),
+        networkPassphrase: 'Pi Network',
+      });
+
+      if (attempts === 0) {
+        txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
+          balanceId: bot.claimId
+        }));
+      }
+
+      txBuilder.addOperation(StellarSdk.Operation.payment({
+        destination: bot.destination,
+        asset: StellarSdk.Asset.native(),
+        amount: bot.amount,
+      }));
+
+      const tx = txBuilder.setTimeout(60).build();
+      tx.sign(botKey);
+
+      const result = await server.submitTransaction(tx);
+
+      if (result?.successful && result?.hash) {
+        console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
+        return;
+      } else {
+        console.log(`❌ [${bot.name}] TX failed (unknown reason)`);
+      }
+
+    } catch (e) {
+      attempts++;
+      lastErrorWasBadSeq = false;
+
+      const errCodes = e?.response?.data?.extras?.result_codes || {};
+      console.log(`❌ [${bot.name}] Attempt ${attempts} failed.`);
+
+      if (Object.keys(errCodes).length > 0) {
+        console.log('🔍 result_codes:', errCodes);
+        if (errCodes.transaction === 'tx_bad_seq') {
+          console.log('⚠️ Retrying immediately due to tx_bad_seq...');
+          lastErrorWasBadSeq = true;
+        }
+      } else {
+        console.log('🔍 Error:', e.message || e.toString());
+      }
+    }
+  }
+
+  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
-// Submit transaction logic
-async function sendTx(bot) {
-  try {
-    const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
-    const accountData = await server.loadAccount(bot.public);
-    const account = new StellarSdk.Account(bot.public, accountData.sequence);
-
-    const baseFeeStroops = Math.floor(parseFloat(bot.baseFeePi || "0.005") * 1e7);
-
-    const txBuilder = new StellarSdk.TransactionBuilder(account, {
-      fee: (baseFeeStroops * 2).toString(),
-      networkPassphrase: 'Pi Network',
-    });
-
-    if (!executed[bot.name]) {
-      txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
-        balanceId: bot.claimId,
-      }));
+// Wait until the next ledger opens
+let lastLedger = 0;
+async function waitForNextLedger() {
+  while (true) {
+    try {
+      const ledger = await server.ledgers().order('desc').limit(1).call();
+      const currentLedger = parseInt(ledger.records[0].sequence);
+      if (currentLedger > lastLedger) {
+        lastLedger = currentLedger;
+        return;
+      }
+    } catch (e) {
+      console.log("⚠️ Ledger check failed while waiting:", e.message || e.toString());
     }
-
-    txBuilder.addOperation(StellarSdk.Operation.payment({
-      destination: bot.destination,
-      asset: StellarSdk.Asset.native(),
-      amount: bot.amount,
-    }));
-
-    const tx = txBuilder.setTimeout(60).build();
-    tx.sign(botKey);
-
-    const result = await server.submitTransaction(tx);
-
-    if (result?.successful) {
-      console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-      executed[bot.name] = true;
-    } else {
-      console.log(`❌ [${bot.name}] TX failed`);
-    }
-
-  } catch (e) {
-    const errCodes = e?.response?.data?.extras?.result_codes;
-    if (errCodes?.transaction === 'tx_bad_seq') {
-      console.log(`⏭️ [${bot.name}] Bad sequence – retry next ledger`);
-      // Retry next ledger
-    } else {
-      console.log(`❌ [${bot.name}] Permanent error – skip for now`);
-      executed[bot.name] = true;
-    }
-
-    if (e?.response?.data) {
-      console.log('🔍 Horizon error detail:', e.response.data);
-    } else {
-      console.log('🔍 Raw error:', e.message || e.toString());
-    }
+    await new Promise(res => setTimeout(res, 1000));
   }
 }
 
-// Stream ledger and trigger bots
-server.ledgers()
-  .cursor('now')
-  .stream({
-    onmessage: async () => {
-      const nowMs = getNowMs();
+// Sequentially run bots
+async function runBotsSequentially() {
+  for (const bot of bots) {
+    console.log(`🚀 Running ${bot.name}...`);
+    await send(bot);
+  }
+}
 
-      for (const bot of bots) {
-        const botTime = getBotTimestamp(bot);
-        const diff = botTime - nowMs;
+// Time-triggered ledger watcher
+let executed = false;
 
-        if (!executed[bot.name] && diff >= 0 && diff <= 5000) {
-          console.log(`⏳ [${bot.name}] Unlocking in ${diff}ms – trying transaction...`);
-          await sendTx(bot);
-        }
+setInterval(async () => {
+  try {
+    const ledger = await server.ledgers().order('desc').limit(1).call();
+    const currentLedger = parseInt(ledger.records[0].sequence);
+    const now = new Date();
+    const nowMs = now.getUTCHours() * 3600000 +
+                  now.getUTCMinutes() * 60000 +
+                  now.getUTCSeconds() * 1000 +
+                  now.getUTCMilliseconds();
+
+    const firstBot = bots[0];
+    const botTimeMs = getBotTimestamp(firstBot);
+    const diff = botTimeMs - nowMs;
+
+    if (currentLedger > lastLedger) {
+      lastLedger = currentLedger;
+      if (!executed && diff >= 0 && diff <= 5000) {
+        console.log(`⏰ Ledger ${currentLedger} matched unlock window for ${firstBot.name}. Executing...`);
+        executed = true;
+        await runBotsSequentially();
       }
-
-      // Reset bots at new UTC day
-      if (nowMs < 1000) {
-        executed = {};
-        console.log("🔁 New UTC day — bot states reset.");
-      }
-    },
-    onerror: (err) => {
-      console.log('⚠️ Ledger stream error:', err);
     }
-  });
 
-// Web UI to check status
+    if (nowMs < 1000) {
+      executed = false;
+      console.log("🔁 New UTC day — reset.");
+    }
+  } catch (e) {
+    console.log("⚠️ Ledger polling error:", e.message || e.toString());
+  }
+}, 1000);
+
+// Web UI to monitor
+const app = express();
+const PORT = process.env.PORT || 10000;
+
 app.get('/', (req, res) => {
-  res.send(`🟢 Bot Status: ${JSON.stringify(executed)}`);
+  res.send(`🟢 Bot status: Triggered = ${executed}`);
 });
 
 app.listen(PORT, () => {
