@@ -19,7 +19,7 @@ function getBotTimestamp(bot) {
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
-  for (let attempt = 1; attempt <= 2; attempt++) { // Only 1 retry
+  for (let attempt = 1; attempt <= 10; attempt++) {
     try {
       if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
@@ -34,7 +34,7 @@ async function send(bot) {
         networkPassphrase: 'Pi Network',
       });
 
-      // First attempt: claim + send; retry: send only
+      // First attempt: claim + send; retries: send only
       if (attempt === 1) {
         txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
           balanceId: bot.claimId
@@ -53,14 +53,16 @@ async function send(bot) {
       const result = await server.submitTransaction(tx);
 
       if (result?.successful && result?.hash) {
-        console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-      } else {
-        console.log(`❌ [${bot.name}] TX not successful`);
-      }
+  console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
+  // Do NOT return here — keep going to retry all attempts
+} else {
+  console.log(`❌ [${bot.name}] TX not successful`);
+}
 
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
 
+      // Detailed Horizon error logging
       if (e?.response?.data?.extras?.result_codes) {
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
       } else if (e?.response?.data) {
@@ -73,7 +75,7 @@ async function send(bot) {
     }
   }
 
-  console.log(`⛔ [${bot.name}] Both attempts failed.`);
+  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
 // Run bots one-by-one
