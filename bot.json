@@ -1,27 +1,14 @@
 [
   {
     "name": "Bot 1",
-    "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
-    "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
+    "public": "GDNYPJB7HGX6ACH3WWCGXZSUSTWDTEWNH2QRR4JWO43CF7A4K6Q22KB3",
+    "secret": "SBZCFYAJK6Q3OX5EQX4URVKKSHYARP574DEFLOHIJAWK7EJNCPGJL6U4",
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
-    "amount": "567.2829224",
-    "claimId": "0000000075b5279d9618e29aaf8e1a8fbc2f598e493cd8645245ce78b3f48c1c8ed0c61a",
+    "amount": "33.1495678",
+    "claimId": "000000004aa579277539cfadf1400c18e9d8e9978c836a1376bc2d91544179d81b23ed6d",
     "hour": "10",
-    "minute": "10",
-    "second": "0",
-    "millisecond": "0",
-    "baseFeePi": "0.005"
-  },
-  {
-    "name": "Bot 2",
-    "public": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
-    "secret": "SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF",
-    "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
-    "amount": "11.2829224",
-    "claimId": "0000000075b5279d9618e29aaf8e1a8fbc2f598e493cd8645245ce78b3f48c1c8ed0c61a",
-    "hour": "10",
-    "minute": "11",
-    "second": "0",
+    "minute": "32",
+    "second": "2",
     "millisecond": "0",
     "baseFeePi": "0.005"
   }
