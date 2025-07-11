@@ -6,10 +6,10 @@
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "amount": "875.2313398",
     "claimId": "000000001392a8a64748db5480965c9237b28f362212902e3a384c2914da88ab5593d011",
-    "hour": "11",
-    "minute": "38",
+    "hour": "4",
+    "minute": "25",
     "second": "0",
     "millisecond": "0",
-    "baseFeePi": "0.005"
+    "baseFeePi": "0.0005"
   }
 ]
