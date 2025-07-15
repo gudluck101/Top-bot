@@ -15,8 +15,8 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Send transaction once with no retry
-async function send(bot) {
+// Send a single transaction using freshly loaded sequence
+async function send(bot, attempt) {
   try {
     const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
     const accountData = await server.loadAccount(bot.public);
@@ -48,13 +48,12 @@ async function send(bot) {
     const result = await server.submitTransaction(tx);
 
     if (result?.successful && result?.hash) {
-      console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
+      console.log(`✅ [${bot.name}] TX Success [Attempt ${attempt}] — Hash: ${result.hash}`);
     } else {
-      console.log(`❌ [${bot.name}] TX not successful`);
+      console.log(`⚠️ [${bot.name}] TX not successful [Attempt ${attempt}]`);
     }
-
   } catch (e) {
-    console.log(`❌ [${bot.name}] Submission failed.`);
+    console.log(`❌ [${bot.name}] Submission failed [Attempt ${attempt}]`);
     if (e?.response?.data?.extras?.result_codes) {
       console.log('🔍 result_codes:', e.response.data.extras.result_codes);
     } else {
@@ -63,12 +62,11 @@ async function send(bot) {
   }
 }
 
-let executed = false;
-
-// Monitor ledger and submit 5 seconds before unlock
+// Monitor ledger and submit up to 5 retries
 async function monitorLedgerAndSubmit(bot) {
   console.log(`⏳ Waiting for unlock time: ${bot.hour}:${bot.minute}:${bot.second} UTC`);
   const targetMs = getBotTimestamp(bot);
+  let attempt = 0;
 
   server.ledgers().cursor('now').stream({
     onmessage: async (ledger) => {
@@ -83,15 +81,14 @@ async function monitorLedgerAndSubmit(bot) {
 
       console.log(`📡 Ledger closed at ${now.toISOString()} | ⏱ Unlock in ${diff} ms`);
 
-      if (!executed && diff <= 5000 && diff >= 0) {
-        console.log(`🚀 [${bot.name}] Submitting TX ${diff}ms before unlock...`);
-        executed = true;
-        await send(bot);
+      if (diff <= 5000 && diff >= -3000 && attempt < 5) {
+        attempt++;
+        console.log(`🚀 [${bot.name}] Attempting TX #${attempt} (${diff}ms from unlock)`);
+        await send(bot, attempt);
       }
 
-      if (nowMs < 1000) {
-        executed = false;
-        console.log("🔁 New UTC day — reset.");
+      if (attempt >= 5) {
+        console.log(`✅ [${bot.name}] Max attempts reached. Stopping retries.`);
       }
     }
   });
@@ -105,7 +102,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-  res.send(`🟢 Watching ledger. Triggered: ${executed}`);
+  res.send(`🟢 Watching ledger. Bot running. Up to 5 attempts max.`);
 });
 
 app.listen(PORT, () => {
