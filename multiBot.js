@@ -5,15 +5,18 @@ const StellarSdk = require('stellar-sdk');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-// Convert time to UNIX timestamp (seconds)
+// Convert bot time to Unix timestamp (in seconds)
 function getUnlockUnix(bot) {
   const now = new Date();
   const date = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
-  const fullTime = new Date(`${date}T${bot.hour}:${bot.minute}:${bot.second}Z`);
+  const hh = String(bot.hour).padStart(2, '0');
+  const mm = String(bot.minute).padStart(2, '0');
+  const ss = String(bot.second).padStart(2, '0');
+  const fullTime = new Date(`${date}T${hh}:${mm}:${ss}Z`);
   return Math.floor(fullTime.getTime() / 1000);
 }
 
-// Build and submit 4 time-bounded transactions
+// Build and submit 4 time-bound transactions
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
   const accountData = await server.loadAccount(bot.public);
@@ -22,13 +25,13 @@ async function send(bot) {
   const baseFeeStroops = Math.floor(baseFeePi * 1e7);
 
   const unlockUnix = getUnlockUnix(bot);
-  const submitUnix = unlockUnix - 10; // 10 seconds before unlock
-  const maxTime = unlockUnix + 60;    // 1-minute window
+  const submitUnix = unlockUnix - 10; // Submit 10 seconds early
+  const maxTime = unlockUnix + 60;    // 1-minute execution window
 
   const nowUnix = Math.floor(Date.now() / 1000);
   const delay = (submitUnix - nowUnix) * 1000;
 
-  console.log(`⏳ Waiting ${delay / 1000}s to submit... (${bot.name})`);
+  console.log(`⏳ Waiting ${Math.max(0, delay / 1000)}s to submit... (${bot.name})`);
 
   if (delay > 0) await new Promise(res => setTimeout(res, delay));
 
@@ -46,7 +49,7 @@ async function send(bot) {
         }
       });
 
-      // Add claim and send
+      // Add operations: claim + send
       txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
         balanceId: bot.claimId
       }));
@@ -56,11 +59,11 @@ async function send(bot) {
         amount: bot.amount
       }));
 
-      const tx = txBuilder.setTimeout(0).build(); // No timeout needed with timebounds
+      // NO .setTimeout() here
+      const tx = txBuilder.build();
       tx.sign(botKey);
 
       const result = await server.submitTransaction(tx);
-
       if (result?.successful && result?.hash) {
         console.log(`✅ TX #${i + 1} SUCCESS (${bot.name}) — Hash: ${result.hash}`);
       } else {
@@ -80,7 +83,7 @@ async function send(bot) {
   }
 }
 
-// Run all bots
+// Run all bots in sequence
 async function runBots() {
   for (const bot of bots) {
     console.log(`🚀 Running bot: ${bot.name}`);
@@ -88,7 +91,7 @@ async function runBots() {
   }
 }
 
-// Monitor server
+// Express Web UI
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -100,5 +103,5 @@ app.listen(PORT, () => {
   console.log(`🌍 Web server running at http://localhost:${PORT}`);
 });
 
-// Start bot run
+// Start execution
 runBots();
