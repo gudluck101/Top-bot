@@ -5,7 +5,7 @@ const StellarSdk = require('stellar-sdk');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-// Convert bot unlock time to UTC milliseconds
+// Convert time to UTC ms
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -15,94 +15,110 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Send a single transaction using freshly loaded sequence
-async function send(bot, attempt) {
-  try {
-    const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
-    const accountData = await server.loadAccount(bot.public);
-    const account = new StellarSdk.Account(bot.public, accountData.sequence);
+// Main bot logic
+async function send(bot) {
+  const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
-    const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
-    const baseFeeStroops = Math.floor(baseFeePi * 1e7);
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    try {
+      if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
-    const txBuilder = new StellarSdk.TransactionBuilder(account, {
-      fee: (baseFeeStroops * 2).toString(),
-      networkPassphrase: 'Pi Network',
-    });
+      const accountData = await server.loadAccount(bot.public);
+      const account = new StellarSdk.Account(bot.public, accountData.sequence);
 
-    if (bot.claimId) {
-      txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
-        balanceId: bot.claimId
+      const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
+      const baseFeeStroops = Math.floor(baseFeePi * 1e7);
+
+      const txBuilder = new StellarSdk.TransactionBuilder(account, {
+        fee: (baseFeeStroops * 2).toString(),
+        networkPassphrase: 'Pi Network',
+      });
+
+      // First attempt: claim + send; retries: send only
+      if (attempt === 1) {
+        txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
+          balanceId: bot.claimId
+        }));
+      }
+
+      txBuilder.addOperation(StellarSdk.Operation.payment({
+        destination: bot.destination,
+        asset: StellarSdk.Asset.native(),
+        amount: bot.amount,
       }));
+
+      const tx = txBuilder.setTimeout(60).build();
+      tx.sign(botKey);
+
+      const result = await server.submitTransaction(tx);
+
+      if (result?.successful && result?.hash) {
+  console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
+  // Do NOT return here — keep going to retry all attempts
+} else {
+  console.log(`❌ [${bot.name}] TX not successful`);
+}
+
+    } catch (e) {
+      console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
+
+      // Detailed Horizon error logging
+      if (e?.response?.data?.extras?.result_codes) {
+        console.log('🔍 result_codes:', e.response.data.extras.result_codes);
+      } else if (e?.response?.data) {
+        console.log('🔍 Horizon error:', e.response.data);
+      } else if (e?.response) {
+        console.log('🔍 Response error:', e.response);
+      } else {
+        console.log('🔍 Raw error:', e.message || e.toString());
+      }
     }
+  }
 
-    txBuilder.addOperation(StellarSdk.Operation.payment({
-      destination: bot.destination,
-      asset: StellarSdk.Asset.native(),
-      amount: bot.amount,
-    }));
+  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
+}
 
-    const tx = txBuilder.setTimeout(60).build();
-    tx.sign(botKey);
-
-    const result = await server.submitTransaction(tx);
-
-    if (result?.successful && result?.hash) {
-      console.log(`✅ [${bot.name}] TX Success [Attempt ${attempt}] — Hash: ${result.hash}`);
-    } else {
-      console.log(`⚠️ [${bot.name}] TX not successful [Attempt ${attempt}]`);
-    }
-  } catch (e) {
-    console.log(`❌ [${bot.name}] Submission failed [Attempt ${attempt}]`);
-    if (e?.response?.data?.extras?.result_codes) {
-      console.log('🔍 result_codes:', e.response.data.extras.result_codes);
-    } else {
-      console.log('🔍 Error:', e.message || e.toString());
-    }
+// Run bots one-by-one
+async function runBotsSequentially() {
+  for (const bot of bots) {
+    console.log(`🚀 Running ${bot.name}...`);
+    await send(bot);
   }
 }
 
-// Monitor ledger and submit up to 5 retries
-async function monitorLedgerAndSubmit(bot) {
-  console.log(`⏳ Waiting for unlock time: ${bot.hour}:${bot.minute}:${bot.second} UTC`);
-  const targetMs = getBotTimestamp(bot);
-  let attempt = 0;
+let executed = false;
 
-  server.ledgers().cursor('now').stream({
-    onmessage: async (ledger) => {
-      const now = new Date();
-      const nowMs =
-        now.getUTCHours() * 3600000 +
-        now.getUTCMinutes() * 60000 +
-        now.getUTCSeconds() * 1000 +
-        now.getUTCMilliseconds();
+// Time-based trigger
+setInterval(() => {
+  const now = new Date();
+  const nowMs =
+    now.getUTCHours() * 3600000 +
+    now.getUTCMinutes() * 60000 +
+    now.getUTCSeconds() * 1000 +
+    now.getUTCMilliseconds();
 
-      const diff = targetMs - nowMs; // how far we are from unlock time
+  const firstBot = bots[0];
+  const botTimeMs = getBotTimestamp(firstBot);
+  const diff = Math.abs(nowMs - botTimeMs);
 
-      console.log(`📡 Ledger closed at ${now.toISOString()} | ⏱ Unlock in ${diff} ms`);
+  if (!executed && diff <= 200) {
+    console.log(`⏰ Time matched for ${firstBot.name}. Starting...`);
+    executed = true;
+    runBotsSequentially();
+  }
 
-      if (diff <= 5000 && diff >= -3000 && attempt < 5) {
-        attempt++;
-        console.log(`🚀 [${bot.name}] Attempting TX #${attempt} (${diff}ms from unlock)`);
-        await send(bot, attempt);
-      }
+  if (nowMs < 1000) {
+    executed = false;
+    console.log("🔁 New UTC day — reset.");
+  }
+}, 100);
 
-      if (attempt >= 5) {
-        console.log(`✅ [${bot.name}] Max attempts reached. Stopping retries.`);
-      }
-    }
-  });
-}
-
-// Start watching the first bot
-monitorLedgerAndSubmit(bots[0]);
-
-// Optional Web UI
+// Web UI to monitor status
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-  res.send(`🟢 Watching ledger. Bot running. Up to 5 attempts max.`);
+  res.send(`🟢 Bot status: Triggered = ${executed}`);
 });
 
 app.listen(PORT, () => {
