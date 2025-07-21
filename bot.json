@@ -4,11 +4,11 @@
     "public": "GBCB3UM5P6CEL6AEJ7CGXJLMPLXWJQCZ7SM2O4L2EUFG5ELEQHF3LCTR",
     "secret": "SC35DNYL4K3BS36IOV2FFKB5JR52TR6F7TKU6CYAGJWLTN4ZP47PIODB",
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
-    "amount": "8.9160994",
+    "amount": "5.0166793",
     "claimId": "00000000e492abd9a7ebee645346f29e0068ab36cc034bc4b28b402b01c66fb32d420f57",
-    "hour": "14",
-    "minute": "31",
-    "second": "42",
+    "hour": "16",
+    "minute": "51",
+    "second": "44",
     "millisecond": "00",
     "baseFeePi": "0.005"
   }
