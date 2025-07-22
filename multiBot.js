@@ -2,24 +2,27 @@ const fs = require('fs');
 const express = require('express');
 const StellarSdk = require('stellar-sdk');
 const nodemailer = require('nodemailer');
-require('dotenv').config();
+require('dotenv').config(); // only for EMAIL_PASS
 
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
+// ✅ Hardcoded email
+const EMAIL_ADDRESS = 'nwankwogoodluck156@gmail.com';
+const EMAIL_PASS = 'nwankwogoodluck156@gmail.com';
 // Nodemailer setup
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: EMAIL_ADDRESS,
+    pass: EMAIL_PASS, // or hardcode password here (not recommended)
   },
 });
 
-function sendEmail(to, subject, html) {
+function sendEmail(_to, subject, html) {
   return transporter.sendMail({
-    from: `"Pi Bot" <${process.env.EMAIL_USER}>`,
-    to,
+    from: `"Pi Bot" <${EMAIL_ADDRESS}>`,
+    to: EMAIL_ADDRESS,
     subject,
     html,
   });
@@ -78,9 +81,9 @@ async function send(bot) {
           <p><b>Amount:</b> ${bot.amount}</p>
           <p><b>To:</b> ${bot.destination}</p>
         `;
-        await sendEmail(bot.email, `${bot.name} - TX SUCCESS ✅`, message);
+        await sendEmail(EMAIL_ADDRESS, `${bot.name} - TX SUCCESS ✅`, message);
         console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-        return; // Exit after success
+        return;
       } else {
         console.log(`❌ [${bot.name}] TX not successful`);
       }
@@ -103,14 +106,13 @@ async function send(bot) {
         console.log('🔍 Raw error:', errorDetails);
       }
 
-      // Send error email on last attempt
       if (attempt === 10) {
         const message = `
           <h3>⛔ ${bot.name} Transaction Failed</h3>
           <p><b>Error:</b> ${errorDetails}</p>
           <p><b>Destination:</b> ${bot.destination}</p>
         `;
-        await sendEmail(bot.email, `${bot.name} - TX FAILED ❌`, message);
+        await sendEmail(EMAIL_ADDRESS, `${bot.name} - TX FAILED ❌`, message);
       }
     }
   }
