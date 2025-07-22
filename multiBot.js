@@ -2,38 +2,30 @@ const fs = require('fs');
 const express = require('express');
 const StellarSdk = require('stellar-sdk');
 const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-// === Email Config ===
-const EMAIL_CONFIG = {
+// Nodemailer setup
+const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'nwankwogoodluck156@gmail.com',
-    pass: 'tomf caoh ivqt itpo'
-  }
-};
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
-const transporter = nodemailer.createTransport(EMAIL_CONFIG);
-
-function sendEmail(to, subject, message) {
-  const mailOptions = {
-    from: EMAIL_CONFIG.auth.user,
+function sendEmail(to, subject, html) {
+  return transporter.sendMail({
+    from: `"Pi Bot" <${process.env.EMAIL_USER}>`,
     to,
     subject,
-    text: message
-  };
-
-  transporter.sendMail(mailOptions, (error, info) => {
-    if (error) {
-      return console.error(`❌ Email error: ${error}`);
-    }
-    console.log(`📧 Email sent to ${to}: ${info.response}`);
+    html,
   });
 }
 
-// === Time Conversion ===
+// Convert time to UTC ms
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -43,7 +35,7 @@ function getBotTimestamp(bot) {
   );
 }
 
-// === Main Bot Logic ===
+// Main bot logic
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
@@ -58,11 +50,11 @@ async function send(bot) {
       const baseFeeStroops = Math.floor(baseFeePi * 1e7);
 
       const txBuilder = new StellarSdk.TransactionBuilder(account, {
-        fee: (baseFeeStroops * 2).toString(), // 2 ops
+        fee: (baseFeeStroops * 2).toString(),
         networkPassphrase: 'Pi Network',
       });
 
-      if (attempt === 1 && bot.claimId) {
+      if (attempt === 1) {
         txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
           balanceId: bot.claimId
         }));
@@ -77,34 +69,18 @@ async function send(bot) {
       const tx = txBuilder.setTimeout(60).build();
       tx.sign(botKey);
 
-      let result;
-
-      // === Use Fee Wallet If Provided ===
-      if (bot.feePayerSecret) {
-        const feePayer = StellarSdk.Keypair.fromSecret(bot.feePayerSecret);
-        const feeBumpTx = StellarSdk.TransactionBuilder.buildFeeBumpTransaction(
-          feePayer,
-          (baseFeeStroops * 2).toString(),
-          tx,
-          'Pi Network'
-        );
-        feeBumpTx.sign(feePayer);
-        result = await server.submitTransaction(feeBumpTx);
-      } else {
-        result = await server.submitTransaction(tx);
-      }
+      const result = await server.submitTransaction(tx);
 
       if (result?.successful && result?.hash) {
+        const message = `
+          <h3>✅ ${bot.name} Transaction Successful</h3>
+          <p><b>TX Hash:</b> ${result.hash}</p>
+          <p><b>Amount:</b> ${bot.amount}</p>
+          <p><b>To:</b> ${bot.destination}</p>
+        `;
+        await sendEmail(bot.email, `${bot.name} - TX SUCCESS ✅`, message);
         console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-
-        if (bot.email) {
-          sendEmail(
-            bot.email,
-            `✅ Transaction Successful: ${bot.name}`,
-            `Transaction succeeded for ${bot.name}\n\nTX Hash:\n${result.hash}`
-          );
-        }
-        return; // stop retries
+        return; // Exit after success
       } else {
         console.log(`❌ [${bot.name}] TX not successful`);
       }
@@ -112,29 +88,29 @@ async function send(bot) {
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
 
-      let errorMsg = '';
-
+      let errorDetails = '';
       if (e?.response?.data?.extras?.result_codes) {
+        errorDetails = JSON.stringify(e.response.data.extras.result_codes);
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
-        errorMsg = JSON.stringify(e.response.data.extras.result_codes);
       } else if (e?.response?.data) {
+        errorDetails = JSON.stringify(e.response.data);
         console.log('🔍 Horizon error:', e.response.data);
-        errorMsg = JSON.stringify(e.response.data);
       } else if (e?.response) {
+        errorDetails = JSON.stringify(e.response);
         console.log('🔍 Response error:', e.response);
-        errorMsg = JSON.stringify(e.response);
       } else {
-        errorMsg = e.message || e.toString();
-        console.log('🔍 Raw error:', errorMsg);
+        errorDetails = e.message || e.toString();
+        console.log('🔍 Raw error:', errorDetails);
       }
 
-      // Send email on final failure
-      if (attempt === 10 && bot.email) {
-        sendEmail(
-          bot.email,
-          `❌ Transaction Failed: ${bot.name}`,
-          `All attempts failed for ${bot.name}\n\nError:\n${errorMsg}`
-        );
+      // Send error email on last attempt
+      if (attempt === 10) {
+        const message = `
+          <h3>⛔ ${bot.name} Transaction Failed</h3>
+          <p><b>Error:</b> ${errorDetails}</p>
+          <p><b>Destination:</b> ${bot.destination}</p>
+        `;
+        await sendEmail(bot.email, `${bot.name} - TX FAILED ❌`, message);
       }
     }
   }
@@ -142,7 +118,7 @@ async function send(bot) {
   console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
-// === Run All Bots ===
+// Run all bots in order
 async function runBotsSequentially() {
   for (const bot of bots) {
     console.log(`🚀 Running ${bot.name}...`);
@@ -150,9 +126,9 @@ async function runBotsSequentially() {
   }
 }
 
-// === Timer Logic ===
 let executed = false;
 
+// Time-based trigger every 100ms
 setInterval(() => {
   const now = new Date();
   const nowMs =
@@ -177,7 +153,7 @@ setInterval(() => {
   }
 }, 100);
 
-// === Web UI ===
+// Express UI
 const app = express();
 const PORT = process.env.PORT || 10000;
 
