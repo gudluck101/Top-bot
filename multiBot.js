@@ -1,11 +1,39 @@
 const fs = require('fs');
 const express = require('express');
 const StellarSdk = require('stellar-sdk');
+const nodemailer = require('nodemailer');
 
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-// Convert time to UTC ms
+// === Email Config ===
+const EMAIL_CONFIG = {
+  service: 'gmail',
+  auth: {
+    user: 'nwankwogoodluck156@gmail.com',
+    pass: 'tomf caoh ivqt itpo'
+  }
+};
+
+const transporter = nodemailer.createTransport(EMAIL_CONFIG);
+
+function sendEmail(to, subject, message) {
+  const mailOptions = {
+    from: EMAIL_CONFIG.auth.user,
+    to,
+    subject,
+    text: message
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      return console.error(`❌ Email error: ${error}`);
+    }
+    console.log(`📧 Email sent to ${to}: ${info.response}`);
+  });
+}
+
+// === Time Conversion ===
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -15,7 +43,7 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Main bot logic
+// === Main Bot Logic ===
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
@@ -30,12 +58,11 @@ async function send(bot) {
       const baseFeeStroops = Math.floor(baseFeePi * 1e7);
 
       const txBuilder = new StellarSdk.TransactionBuilder(account, {
-        fee: (baseFeeStroops * 2).toString(),
+        fee: (baseFeeStroops * 2).toString(), // 2 ops
         networkPassphrase: 'Pi Network',
       });
 
-      // First attempt: claim + send; retries: send only
-      if (attempt === 1) {
+      if (attempt === 1 && bot.claimId) {
         txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
           balanceId: bot.claimId
         }));
@@ -50,27 +77,64 @@ async function send(bot) {
       const tx = txBuilder.setTimeout(60).build();
       tx.sign(botKey);
 
-      const result = await server.submitTransaction(tx);
+      let result;
+
+      // === Use Fee Wallet If Provided ===
+      if (bot.feePayerSecret) {
+        const feePayer = StellarSdk.Keypair.fromSecret(bot.feePayerSecret);
+        const feeBumpTx = StellarSdk.TransactionBuilder.buildFeeBumpTransaction(
+          feePayer,
+          (baseFeeStroops * 2).toString(),
+          tx,
+          'Pi Network'
+        );
+        feeBumpTx.sign(feePayer);
+        result = await server.submitTransaction(feeBumpTx);
+      } else {
+        result = await server.submitTransaction(tx);
+      }
 
       if (result?.successful && result?.hash) {
-  console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-  // Do NOT return here — keep going to retry all attempts
-} else {
-  console.log(`❌ [${bot.name}] TX not successful`);
-}
+        console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
+
+        if (bot.email) {
+          sendEmail(
+            bot.email,
+            `✅ Transaction Successful: ${bot.name}`,
+            `Transaction succeeded for ${bot.name}\n\nTX Hash:\n${result.hash}`
+          );
+        }
+        return; // stop retries
+      } else {
+        console.log(`❌ [${bot.name}] TX not successful`);
+      }
 
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
 
-      // Detailed Horizon error logging
+      let errorMsg = '';
+
       if (e?.response?.data?.extras?.result_codes) {
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
+        errorMsg = JSON.stringify(e.response.data.extras.result_codes);
       } else if (e?.response?.data) {
         console.log('🔍 Horizon error:', e.response.data);
+        errorMsg = JSON.stringify(e.response.data);
       } else if (e?.response) {
         console.log('🔍 Response error:', e.response);
+        errorMsg = JSON.stringify(e.response);
       } else {
-        console.log('🔍 Raw error:', e.message || e.toString());
+        errorMsg = e.message || e.toString();
+        console.log('🔍 Raw error:', errorMsg);
+      }
+
+      // Send email on final failure
+      if (attempt === 10 && bot.email) {
+        sendEmail(
+          bot.email,
+          `❌ Transaction Failed: ${bot.name}`,
+          `All attempts failed for ${bot.name}\n\nError:\n${errorMsg}`
+        );
       }
     }
   }
@@ -78,7 +142,7 @@ async function send(bot) {
   console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
-// Run bots one-by-one
+// === Run All Bots ===
 async function runBotsSequentially() {
   for (const bot of bots) {
     console.log(`🚀 Running ${bot.name}...`);
@@ -86,9 +150,9 @@ async function runBotsSequentially() {
   }
 }
 
+// === Timer Logic ===
 let executed = false;
 
-// Time-based trigger
 setInterval(() => {
   const now = new Date();
   const nowMs =
@@ -113,7 +177,7 @@ setInterval(() => {
   }
 }, 100);
 
-// Web UI to monitor status
+// === Web UI ===
 const app = express();
 const PORT = process.env.PORT || 10000;
 
