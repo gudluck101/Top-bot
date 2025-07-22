@@ -9,7 +9,7 @@ const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
 // ✅ Hardcoded email
 const EMAIL_ADDRESS = 'nwankwogoodluck156@gmail.com';
-const EMAIL_PASS = 'nwankwogoodluck156@gmail.com';
+const EMAIL_PASS = 'tomf caoh ivqt itpo';
 // Nodemailer setup
 const transporter = nodemailer.createTransport({
   service: 'gmail',
