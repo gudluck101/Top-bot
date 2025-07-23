@@ -2,7 +2,8 @@ name: Deploy Bot to EC2
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -12,20 +13,15 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Decode private key
+    - name: Create private key file
       run: |
         echo "${{ secrets.KEY }}" | base64 -d > private_key.pem
         chmod 600 private_key.pem
 
-    - name: Deploy to EC2
+    - name: Deploy and Start Bot on EC2
       run: |
-        ssh -o StrictHostKeyChecking=no -i private_key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} "
-          sudo apt update &&
-          sudo apt install -y nodejs npm &&
-          cd /home/ubuntu/bot &&
-          git pull origin main ||
-          git clone https://github.com/${{ github.repository }} bot &&
-          cd bot &&
-          npm install &&
-          nohup node ${{ secrets.BOT_FILENAME }} > output.log 2>&1 &
+        ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@51.21.111.227 "
+          cd /home/ubuntu/Top-bot && 
+          git pull && 
+          nohup node multibot.js > bot.log 2>&1 &
         "
