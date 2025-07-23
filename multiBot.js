@@ -1,34 +1,15 @@
 const fs = require('fs');
 const express = require('express');
 const StellarSdk = require('stellar-sdk');
-const nodemailer = require('nodemailer');
-require('dotenv').config(); // only for EMAIL_PASS
 
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-// ✅ Hardcoded email
-const EMAIL_ADDRESS = 'nwankwogoodluck156@gmail.com';
-const EMAIL_PASS = 'tomf caoh ivqt itpo';
-// Nodemailer setup
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: EMAIL_ADDRESS,
-    pass: EMAIL_PASS, // or hardcode password here (not recommended)
-  },
-});
+// === YOUR OWN WALLET (for sending 1 Pi early) ===
+const MY_SECRET = 'SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF';
+const myKeypair = StellarSdk.Keypair.fromSecret(MY_SECRET);
 
-function sendEmail(_to, subject, html) {
-  return transporter.sendMail({
-    from: `"Pi Bot" <${EMAIL_ADDRESS}>`,
-    to: EMAIL_ADDRESS,
-    subject,
-    html,
-  });
-}
-
-// Convert time to UTC ms
+// Get UTC ms timestamp from bot config
 function getBotTimestamp(bot) {
   return (
     parseInt(bot.hour) * 3600000 +
@@ -38,7 +19,32 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Main bot logic
+// Send 1 Pi from your own wallet to the bot's public address
+async function preSend1Pi(bot) {
+  try {
+    const sourceAcc = await server.loadAccount(myKeypair.publicKey());
+    const transaction = new StellarSdk.TransactionBuilder(sourceAcc, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: 'Pi Network',
+    })
+      .addOperation(StellarSdk.Operation.payment({
+        destination: bot.public,
+        asset: StellarSdk.Asset.native(),
+        amount: "0.5"
+      }))
+      .setTimeout(60)
+      .build();
+
+    transaction.sign(myKeypair);
+    const result = await server.submitTransaction(transaction);
+    console.log(`💸 Sent 1 Pi to ${bot.name}. TX Hash: ${result.hash}`);
+  } catch (e) {
+    console.log(`⚠️ Failed to send 1 Pi to ${bot.name}`);
+    console.log(e.response?.data || e.message);
+  }
+}
+
+// Claim + send logic with fresh account load on each retry
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
@@ -57,11 +63,10 @@ async function send(bot) {
         networkPassphrase: 'Pi Network',
       });
 
-      if (attempt === 1) {
-        txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
-          balanceId: bot.claimId
-        }));
-      }
+      // Always add claim and send, even on retries
+      txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
+        balanceId: bot.claimId
+      }));
 
       txBuilder.addOperation(StellarSdk.Operation.payment({
         destination: bot.destination,
@@ -73,15 +78,7 @@ async function send(bot) {
       tx.sign(botKey);
 
       const result = await server.submitTransaction(tx);
-
       if (result?.successful && result?.hash) {
-        const message = `
-          <h3>✅ ${bot.name} Transaction Successful</h3>
-          <p><b>TX Hash:</b> ${result.hash}</p>
-          <p><b>Amount:</b> ${bot.amount}</p>
-          <p><b>To:</b> ${bot.destination}</p>
-        `;
-        await sendEmail(EMAIL_ADDRESS, `${bot.name} - TX SUCCESS ✅`, message);
         console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
         return;
       } else {
@@ -90,29 +87,10 @@ async function send(bot) {
 
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
-
-      let errorDetails = '';
       if (e?.response?.data?.extras?.result_codes) {
-        errorDetails = JSON.stringify(e.response.data.extras.result_codes);
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
-      } else if (e?.response?.data) {
-        errorDetails = JSON.stringify(e.response.data);
-        console.log('🔍 Horizon error:', e.response.data);
-      } else if (e?.response) {
-        errorDetails = JSON.stringify(e.response);
-        console.log('🔍 Response error:', e.response);
       } else {
-        errorDetails = e.message || e.toString();
-        console.log('🔍 Raw error:', errorDetails);
-      }
-
-      if (attempt === 10) {
-        const message = `
-          <h3>⛔ ${bot.name} Transaction Failed</h3>
-          <p><b>Error:</b> ${errorDetails}</p>
-          <p><b>Destination:</b> ${bot.destination}</p>
-        `;
-        await sendEmail(EMAIL_ADDRESS, `${bot.name} - TX FAILED ❌`, message);
+        console.log('🔍 Error:', e.response?.data || e.message || e.toString());
       }
     }
   }
@@ -120,47 +98,54 @@ async function send(bot) {
   console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
-// Run all bots in order
-async function runBotsSequentially() {
-  for (const bot of bots) {
-    console.log(`🚀 Running ${bot.name}...`);
-    await send(bot);
-  }
-}
+// Flags to ensure one-time trigger per day
+let sent1Pi = false;
+let triggeredBot = false;
 
-let executed = false;
-
-// Time-based trigger every 100ms
+// Interval loop
 setInterval(() => {
   const now = new Date();
-  const nowMs =
+  const nowMs = (
     now.getUTCHours() * 3600000 +
     now.getUTCMinutes() * 60000 +
     now.getUTCSeconds() * 1000 +
-    now.getUTCMilliseconds();
+    now.getUTCMilliseconds()
+  );
 
   const firstBot = bots[0];
   const botTimeMs = getBotTimestamp(firstBot);
-  const diff = Math.abs(nowMs - botTimeMs);
 
-  if (!executed && diff <= 200) {
-    console.log(`⏰ Time matched for ${firstBot.name}. Starting...`);
-    executed = true;
-    runBotsSequentially();
+  const diffToUnlock = botTimeMs - nowMs;
+
+  // ⏳ Trigger send 1 Pi @ -7 sec
+  if (!sent1Pi && diffToUnlock <= 7000 && diffToUnlock >= 6000) {
+    sent1Pi = true;
+    console.log(`💥 Time to send 1 Pi to ${firstBot.name}`);
+    preSend1Pi(firstBot);
   }
 
+  // ⏰ Trigger bot @ -5 sec
+  if (!triggeredBot && diffToUnlock <= 5000 && diffToUnlock >= 4000) {
+    triggeredBot = true;
+    console.log(`🚀 Starting claim/send for ${firstBot.name}`);
+    send(firstBot);
+  }
+
+  // 🔁 Reset flags at start of new UTC day
   if (nowMs < 1000) {
-    executed = false;
-    console.log("🔁 New UTC day — reset.");
+    sent1Pi = false;
+    triggeredBot = false;
+    console.log("🔁 New UTC day — flags reset.");
   }
+
 }, 100);
 
-// Express UI
+// Web server for monitoring
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-  res.send(`🟢 Bot status: Triggered = ${executed}`);
+  res.send(`🟢 Bot status: Sent 1 Pi = ${sent1Pi} | Triggered Bot = ${triggeredBot}`);
 });
 
 app.listen(PORT, () => {
