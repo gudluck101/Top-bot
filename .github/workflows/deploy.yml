@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
+    - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Set up SSH Key
+    - name: Create PEM file from secret
       run: |
         echo "${{ secrets.EC2_SSH_KEY }}" > private_key.pem
         chmod 600 private_key.pem
@@ -22,8 +22,9 @@ jobs:
       run: |
         ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@51.21.111.227 << 'EOF'
           pm2 stop all || true
-          cd Top-bot
+          cd Top-bot || git clone https://github.com/gudluck101/Top-bot.git && cd Top-bot
           git pull origin main
           npm install
           pm2 start multibot.js --name topbot
+          pm2 save
         EOF
