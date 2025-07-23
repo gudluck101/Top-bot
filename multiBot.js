@@ -5,7 +5,7 @@ const StellarSdk = require('stellar-sdk');
 const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-// === YOUR OWN WALLET (for sending 1 Pi early) ===
+// === YOUR OWN WALLET (for sending 0.5 Pi early) ===
 const MY_SECRET = 'SADOW7BYKE3YH63SSSPBKRTA575DO4CCDTMD7J7NO6XXMIKGCNKMQVNF';
 const myKeypair = StellarSdk.Keypair.fromSecret(MY_SECRET);
 
@@ -19,9 +19,10 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Send 1 Pi from your own wallet to the bot's public address
+// Send 0.5 Pi from your own wallet to the bot's public address
 async function preSend1Pi(bot) {
   try {
+    console.log(`🔁 Preparing to send 0.5 Pi to ${bot.public}`);
     const sourceAcc = await server.loadAccount(myKeypair.publicKey());
     const transaction = new StellarSdk.TransactionBuilder(sourceAcc, {
       fee: StellarSdk.BASE_FEE,
@@ -37,9 +38,9 @@ async function preSend1Pi(bot) {
 
     transaction.sign(myKeypair);
     const result = await server.submitTransaction(transaction);
-    console.log(`💸 Sent 1 Pi to ${bot.name}. TX Hash: ${result.hash}`);
+    console.log(`💸 Sent 0.5 Pi to ${bot.name}. TX Hash: ${result.hash}`);
   } catch (e) {
-    console.log(`⚠️ Failed to send 1 Pi to ${bot.name}`);
+    console.log(`⚠️ Failed to send 0.5 Pi to ${bot.name}`);
     console.log(e.response?.data || e.message);
   }
 }
@@ -102,30 +103,31 @@ async function send(bot) {
 let sent1Pi = false;
 let triggeredBot = false;
 
-// Interval loop
+// Interval loop (check every 100ms)
 setInterval(() => {
   const now = new Date();
-  const nowMs = (
+  const nowMs =
     now.getUTCHours() * 3600000 +
     now.getUTCMinutes() * 60000 +
     now.getUTCSeconds() * 1000 +
-    now.getUTCMilliseconds()
-  );
+    now.getUTCMilliseconds();
 
   const firstBot = bots[0];
   const botTimeMs = getBotTimestamp(firstBot);
-
   const diffToUnlock = botTimeMs - nowMs;
 
-  // ⏳ Trigger send 1 Pi @ -7 sec
-  if (!sent1Pi && diffToUnlock <= 7000 && diffToUnlock >= 6000) {
+  // Debugging log
+  console.log(`🕒 Now: ${now.toISOString()}, DiffToUnlock: ${diffToUnlock}ms`);
+
+  // ⏳ Send 0.5 Pi ~7s before unlock (wider range: 7s to 3s before)
+  if (!sent1Pi && diffToUnlock <= 7000 && diffToUnlock >= 3000) {
     sent1Pi = true;
-    console.log(`💥 Time to send 1 Pi to ${firstBot.name}`);
+    console.log(`💥 Time to send 0.5 Pi to ${firstBot.name}`);
     preSend1Pi(firstBot);
   }
 
-  // ⏰ Trigger bot @ -5 sec
-  if (!triggeredBot && diffToUnlock <= 5000 && diffToUnlock >= 4000) {
+  // ⏰ Trigger claim/send ~5s before unlock
+  if (!triggeredBot && diffToUnlock <= 5000 && diffToUnlock >= 2000) {
     triggeredBot = true;
     console.log(`🚀 Starting claim/send for ${firstBot.name}`);
     send(firstBot);
@@ -145,7 +147,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-  res.send(`🟢 Bot status: Sent 1 Pi = ${sent1Pi} | Triggered Bot = ${triggeredBot}`);
+  res.send(`🟢 Bot status: Sent 0.5 Pi = ${sent1Pi} | Triggered Bot = ${triggeredBot}`);
 });
 
 app.listen(PORT, () => {
