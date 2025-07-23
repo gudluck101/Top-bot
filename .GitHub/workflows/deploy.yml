@@ -10,18 +10,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout Code
       uses: actions/checkout@v3
 
-    - name: Create private key file
+    - name: Set up SSH Key
       run: |
-        echo "${{ secrets.KEY }}" | base64 -d > private_key.pem
+        echo "${{ secrets.EC2_SSH_KEY }}" > private_key.pem
         chmod 600 private_key.pem
 
-    - name: Deploy and Start Bot on EC2
+    - name: Deploy to EC2
       run: |
-        ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@51.21.111.227 "
-          cd /home/ubuntu/Top-bot && 
-          git pull && 
-          nohup node multibot.js > bot.log 2>&1 &
-        "
+        ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@51.21.111.227 << 'EOF'
+          pm2 stop all || true
+          cd Top-bot
+          git pull origin main
+          npm install
+          pm2 start multibot.js --name topbot
+        EOF
