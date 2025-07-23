@@ -1,0 +1,31 @@
+name: Deploy Bot to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Decode private key
+      run: |
+        echo "${{ secrets.KEY }}" | base64 -d > private_key.pem
+        chmod 600 private_key.pem
+
+    - name: Deploy to EC2
+      run: |
+        ssh -o StrictHostKeyChecking=no -i private_key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST }} "
+          sudo apt update &&
+          sudo apt install -y nodejs npm &&
+          cd /home/ubuntu/bot &&
+          git pull origin main ||
+          git clone https://github.com/${{ github.repository }} bot &&
+          cd bot &&
+          npm install &&
+          nohup node ${{ secrets.BOT_FILENAME }} > output.log 2>&1 &
+        "
