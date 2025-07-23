@@ -154,6 +154,4 @@ app.listen(PORT, () => {
 console.log(🌍 Server running on port ${PORT});
 });
 
-Why is it not sending 1 pi
-
     
