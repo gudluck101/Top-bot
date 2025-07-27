@@ -15,7 +15,6 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Main bot logic
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
@@ -23,6 +22,7 @@ async function send(bot) {
     try {
       if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
+      // Load fresh account + sequence each time
       const accountData = await server.loadAccount(bot.public);
       const account = new StellarSdk.Account(bot.public, accountData.sequence);
 
@@ -34,12 +34,10 @@ async function send(bot) {
         networkPassphrase: 'Pi Network',
       });
 
-      // First attempt: claim + send; retries: send only
-      if (attempt === 1) {
-        txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
-          balanceId: bot.claimId
-        }));
-      }
+      // Always attempt claim + send
+      txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
+        balanceId: bot.claimId,
+      }));
 
       txBuilder.addOperation(StellarSdk.Operation.payment({
         destination: bot.destination,
@@ -53,16 +51,14 @@ async function send(bot) {
       const result = await server.submitTransaction(tx);
 
       if (result?.successful && result?.hash) {
-  console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-  // Do NOT return here — keep going to retry all attempts
-} else {
-  console.log(`❌ [${bot.name}] TX not successful`);
-}
+        console.log(`✅ [${bot.name}] TX Success (attempt ${attempt})! Hash: ${result.hash}`);
+        break;
+      } else {
+        console.log(`❌ [${bot.name}] TX not successful (attempt ${attempt})`);
+      }
 
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
-
-      // Detailed Horizon error logging
       if (e?.response?.data?.extras?.result_codes) {
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
       } else if (e?.response?.data) {
@@ -75,52 +71,51 @@ async function send(bot) {
     }
   }
 
-  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
+  console.log(`🔁 [${bot.name}] Completed 10 attempts.`);
 }
 
-// Run bots one-by-one
-async function runBotsSequentially() {
+// Ledger streaming trigger
+function streamAndTrigger(bot) {
+  const unlockTimeMs = getBotTimestamp(bot);
+  const triggerTime = unlockTimeMs - 6000; // 6 seconds before unlock
+
+  server.ledgers().cursor('now').stream({
+    onmessage: async () => {
+      const now = new Date();
+      const nowMs = now.getUTCHours() * 3600000 +
+                    now.getUTCMinutes() * 60000 +
+                    now.getUTCSeconds() * 1000 +
+                    now.getUTCMilliseconds();
+
+      if (nowMs >= triggerTime && nowMs <= unlockTimeMs) {
+        console.log(`📟 Ledger seen at ${now.toISOString()}. Submitting TX for ${bot.name}...`);
+        await new Promise(res => setTimeout(res, 200)); // wait for ledger to be active
+        await send(bot);
+      }
+    },
+    onerror: (err) => {
+      console.error(`🔴 Ledger stream error for ${bot.name}:`, err.message || err);
+    }
+  });
+}
+
+// Start monitoring ledgers for all bots
+function watchBots() {
   for (const bot of bots) {
-    console.log(`🚀 Running ${bot.name}...`);
-    await send(bot);
+    console.log(`👀 Watching ${bot.name} for unlock...`);
+    streamAndTrigger(bot);
   }
 }
-
-let executed = false;
-
-// Time-based trigger
-setInterval(() => {
-  const now = new Date();
-  const nowMs =
-    now.getUTCHours() * 3600000 +
-    now.getUTCMinutes() * 60000 +
-    now.getUTCSeconds() * 1000 +
-    now.getUTCMilliseconds();
-
-  const firstBot = bots[0];
-  const botTimeMs = getBotTimestamp(firstBot);
-  const diff = Math.abs(nowMs - botTimeMs);
-
-  if (!executed && diff <= 200) {
-    console.log(`⏰ Time matched for ${firstBot.name}. Starting...`);
-    executed = true;
-    runBotsSequentially();
-  }
-
-  if (nowMs < 1000) {
-    executed = false;
-    console.log("🔁 New UTC day — reset.");
-  }
-}, 100);
 
 // Web UI to monitor status
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-  res.send(`🟢 Bot status: Triggered = ${executed}`);
+  res.send('🟢 Bot is watching ledger stream...');
 });
 
 app.listen(PORT, () => {
   console.log(`🌍 Server running on port ${PORT}`);
+  watchBots();
 });
