@@ -7,7 +7,7 @@
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "amount": "0.01",
     "baseFeePi": "0.01",
-    "on": true
+    "on": false
   },
     {
     "name": "ClaimBot1",
