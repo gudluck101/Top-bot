@@ -34,7 +34,7 @@ async function send(bot) {
       const accountData = await server.loadAccount(bot.public);
       const account = new StellarSdk.Account(bot.public, accountData.sequence);
 
-      const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
+      const baseFeePi = parseFloat(bot.baseFeePi || "0.01");
       const baseFeeStroops = Math.floor(baseFeePi * 1e7);
 
       const txBuilder = new StellarSdk.TransactionBuilder(account, {
@@ -77,7 +77,7 @@ async function send(bot) {
       }
     }
 
-    await new Promise(res => setTimeout(res, 500)); // 1s between retries
+    await new Promise(res => setTimeout(res, 700)); // 1s between retries
   }
 }
 
