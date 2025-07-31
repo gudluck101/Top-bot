@@ -8,5 +8,15 @@
     "amount": "0.01",
     "baseFeePi": "0.01",
     "on": true
-  }
+  },
+    {
+    "name": "AutoClaimBot1",
+    "secret": "SCOMUMGVBS6IUDC6O5TR5YRG4CAKB4PJU5LLT7JRECFXKHXDYMP2YZNF",
+    "public": "GDJTVWDN6M6NKVKJFGPCPEV346M6UPKVGLCO7NVTNMJGN7NDTD7G55KR",
+    "claimId": "000000003aed1b81c057d307473a1029ab3ffd962eab824a26cfbd2b65a1ad4b9b277d6e",
+    "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
+    "amount": "0.02",
+    "baseFeePi": "0.01",
+    "on": true
+    }
 ]
