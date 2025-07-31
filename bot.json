@@ -6,7 +6,7 @@
     "claimId": "00000000959aeebdf3720b118fb56f967d1f028929a9abe7ab6b3db9e27695a84b7fdfd3",
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
     "amount": "0.01",
-    "baseFeePi": "0.03",
+    "baseFeePi": "0.01",
     "on": true
   }
 ]
