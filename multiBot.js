@@ -77,7 +77,7 @@ async function send(bot) {
       }
     }
 
-    await new Promise(res => setTimeout(res, 300)); // 1s between retries
+    await new Promise(res => setTimeout(res, 500)); // 1s between retries
   }
 }
 
