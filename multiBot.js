@@ -2,39 +2,33 @@ const fs = require('fs');
 const express = require('express');
 const StellarSdk = require('stellar-sdk');
 
-let bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
+const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-const app = express();
-const PORT = process.env.PORT || 10000;
-
-// Reload bots (for ON/OFF toggle)
-function reloadBots() {
-  bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
+// Convert time to UTC ms
+function getBotTimestamp(bot) {
+  return (
+    parseInt(bot.hour) * 3600000 +
+    parseInt(bot.minute) * 60000 +
+    parseInt(bot.second) * 1000 +
+    parseInt(bot.millisecond || 0)
+  );
 }
 
-// Main bot logic with infinite retry, fresh sequence & re-build
+// Main bot logic with infinite retry on claim + send
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
   let attempt = 0;
 
   while (true) {
-    reloadBots();
-    const currentBot = bots.find(b => b.name === bot.name);
-
-    if (!currentBot || !currentBot.on) {
-      console.log(`🛑 [${bot.name}] Bot is OFF. Exiting.`);
-      return;
-    }
-
     attempt++;
-    console.log(`🔄 [${bot.name}] Attempt ${attempt}...`);
-
     try {
+      if (attempt > 1) await new Promise(res => setTimeout(res, 400));
+
       const accountData = await server.loadAccount(bot.public);
       const account = new StellarSdk.Account(bot.public, accountData.sequence);
 
-      const baseFeePi = parseFloat(bot.baseFeePi || "0.01");
+      const baseFeePi = parseFloat(bot.baseFeePi || "0.005");
       const baseFeeStroops = Math.floor(baseFeePi * 1e7);
 
       const txBuilder = new StellarSdk.TransactionBuilder(account, {
@@ -42,11 +36,12 @@ async function send(bot) {
         networkPassphrase: 'Pi Network',
       });
 
-      // Always try claim + send
+      // Always try to claim first
       txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
         balanceId: bot.claimId
       }));
 
+      // Then send
       txBuilder.addOperation(StellarSdk.Operation.payment({
         destination: bot.destination,
         asset: StellarSdk.Asset.native(),
@@ -60,55 +55,73 @@ async function send(bot) {
 
       if (result?.successful && result?.hash) {
         console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-        return; // stop retries
+        break; // Exit infinite loop
       } else {
-        console.log(`❌ [${bot.name}] TX failed. No success response.`);
+        console.log(`❌ [${bot.name}] TX not successful`);
       }
 
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
 
+      // Horizon error logging
       if (e?.response?.data?.extras?.result_codes) {
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
       } else if (e?.response?.data) {
         console.log('🔍 Horizon error:', e.response.data);
+      } else if (e?.response) {
+        console.log('🔍 Response error:', e.response);
       } else {
-        console.log('🔍 Error:', e.message || e.toString());
+        console.log('🔍 Raw error:', e.message || e.toString());
       }
     }
-
-    await new Promise(res => setTimeout(res, 1000)); // 1s between retries
   }
+
+  console.log(`✅ [${bot.name}] Completed after ${attempt} attempts.`);
 }
 
-// Start all bots marked as "on"
-function runActiveBots() {
-  reloadBots();
+// Run bots one-by-one
+async function runBotsSequentially() {
   for (const bot of bots) {
-    if (bot.on) {
-      console.log(`🚀 Starting bot: ${bot.name}`);
-      send(bot);
-    } else {
-      console.log(`⏸️ Skipping bot: ${bot.name} (OFF)`);
-    }
+    console.log(`🚀 Running ${bot.name}...`);
+    await send(bot);
   }
 }
 
-// Immediately run bots when script starts
-runActiveBots();
+let executed = false;
 
-// Web interface
+// Time-based trigger
+setInterval(() => {
+  const now = new Date();
+  const nowMs =
+    now.getUTCHours() * 3600000 +
+    now.getUTCMinutes() * 60000 +
+    now.getUTCSeconds() * 1000 +
+    now.getUTCMilliseconds();
+
+  const firstBot = bots[0];
+  const botTimeMs = getBotTimestamp(firstBot);
+  const diff = Math.abs(nowMs - botTimeMs);
+
+  if (!executed && diff <= 200) {
+    console.log(`⏰ Time matched for ${firstBot.name}. Starting...`);
+    executed = true;
+    runBotsSequentially();
+  }
+
+  if (nowMs < 1000) {
+    executed = false;
+    console.log("🔁 New UTC day — reset.");
+  }
+}, 100);
+
+// Web UI to monitor status
+const app = express();
+const PORT = process.env.PORT || 10000;
+
 app.get('/', (req, res) => {
-  reloadBots();
-  const active = bots.filter(b => b.on).map(b => b.name);
-  res.send(`🟢 Running bots: ${active.join(', ') || 'None'}`);
-});
-
-app.get('/reload', (req, res) => {
-  reloadBots();
-  res.send('🔄 Reloaded bot.json');
+  res.send(`🟢 Bot status: Triggered = ${executed}`);
 });
 
 app.listen(PORT, () => {
-  console.log(`🌍 Web monitor at http://localhost:${PORT}`);
+  console.log(`🌍 Server running on port ${PORT}`);
 });
