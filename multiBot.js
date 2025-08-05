@@ -15,13 +15,11 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Main bot logic with infinite retry on claim + send
+// Main bot logic
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
-  let attempt = 0;
 
-  while (true) {
-    attempt++;
+  for (let attempt = 1; attempt <= 10; attempt++) {
     try {
       if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
@@ -36,12 +34,13 @@ async function send(bot) {
         networkPassphrase: 'Pi Network',
       });
 
-      // Always try to claim first
-      txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
-        balanceId: bot.claimId
-      }));
+      // First attempt: claim + send; retries: send only
+      if (attempt === 1) {
+        txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
+          balanceId: bot.claimId
+        }));
+      }
 
-      // Then send
       txBuilder.addOperation(StellarSdk.Operation.payment({
         destination: bot.destination,
         asset: StellarSdk.Asset.native(),
@@ -54,16 +53,16 @@ async function send(bot) {
       const result = await server.submitTransaction(tx);
 
       if (result?.successful && result?.hash) {
-        console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-        break; // Exit infinite loop
-      } else {
-        console.log(`❌ [${bot.name}] TX not successful`);
-      }
+  console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
+  // Do NOT return here — keep going to retry all attempts
+} else {
+  console.log(`❌ [${bot.name}] TX not successful`);
+}
 
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
 
-      // Horizon error logging
+      // Detailed Horizon error logging
       if (e?.response?.data?.extras?.result_codes) {
         console.log('🔍 result_codes:', e.response.data.extras.result_codes);
       } else if (e?.response?.data) {
@@ -76,7 +75,7 @@ async function send(bot) {
     }
   }
 
-  console.log(`✅ [${bot.name}] Completed after ${attempt} attempts.`);
+  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
 // Run bots one-by-one
