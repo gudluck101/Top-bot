@@ -35,11 +35,9 @@ async function send(bot) {
       });
 
       // First attempt: claim + send; retries: send only
-      if (attempt === 1) {
         txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
           balanceId: bot.claimId
         }));
-      }
 
       txBuilder.addOperation(StellarSdk.Operation.payment({
         destination: bot.destination,
