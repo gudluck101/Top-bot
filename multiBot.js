@@ -19,7 +19,7 @@ function getBotTimestamp(bot) {
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
-  for (let attempt = 1; attempt <= 10; attempt++) {
+  for (let attempt = 1; attempt <= 100; attempt++) {
     try {
       if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
@@ -73,7 +73,7 @@ async function send(bot) {
     }
   }
 
-  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
+  console.log(`⛔ [${bot.name}] All 100 attempts failed.`);
 }
 
 // Run bots one-by-one
