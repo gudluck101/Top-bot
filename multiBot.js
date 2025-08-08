@@ -2,7 +2,7 @@ const fs = require('fs');
 const express = require('express');
 const StellarSdk = require('stellar-sdk');
 
-const bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
+let bots = JSON.parse(fs.readFileSync('bot.json', 'utf-8'));
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
 // Convert time to UTC ms
@@ -15,14 +15,16 @@ function getBotTimestamp(bot) {
   );
 }
 
-// Main bot logic
+// Main bot logic — always claim + send, infinite retries, fresh sequence
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
+  let attempt = 1;
 
-  for (let attempt = 1; attempt <= 10; attempt++) {
+  while (true) { // Infinite retry loop
     try {
       if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
+      // Load fresh sequence every time
       const accountData = await server.loadAccount(bot.public);
       const account = new StellarSdk.Account(bot.public, accountData.sequence);
 
@@ -34,13 +36,12 @@ async function send(bot) {
         networkPassphrase: 'Pi Network',
       });
 
-      // First attempt: claim + send; retries: send only
-      if (attempt === 1) {
-        txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
-          balanceId: bot.claimId
-        }));
-      }
+      // Always claim
+      txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
+        balanceId: bot.claimId
+      }));
 
+      // Always send
       txBuilder.addOperation(StellarSdk.Operation.payment({
         destination: bot.destination,
         asset: StellarSdk.Asset.native(),
@@ -53,11 +54,10 @@ async function send(bot) {
       const result = await server.submitTransaction(tx);
 
       if (result?.successful && result?.hash) {
-  console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash}`);
-  // Do NOT return here — keep going to retry all attempts
-} else {
-  console.log(`❌ [${bot.name}] TX not successful`);
-}
+        console.log(`✅ [${bot.name}] TX Success! Hash: ${result.hash} — retrying again...`);
+      } else {
+        console.log(`❌ [${bot.name}] TX not successful — retrying...`);
+      }
 
     } catch (e) {
       console.log(`❌ [${bot.name}] Attempt ${attempt} failed.`);
@@ -73,23 +73,42 @@ async function send(bot) {
         console.log('🔍 Raw error:', e.message || e.toString());
       }
     }
-  }
 
-  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
+    attempt++;
+  }
 }
 
 // Run bots one-by-one
 async function runBotsSequentially() {
   for (const bot of bots) {
     console.log(`🚀 Running ${bot.name}...`);
-    await send(bot);
+    send(bot); // not awaited so each runs in parallel
   }
 }
 
 let executed = false;
+let lastBotFileHash = JSON.stringify(bots);
+
+// Watch for changes in bot.json — run immediately if changed
+setInterval(() => {
+  try {
+    const latestBotsRaw = fs.readFileSync('bot.json', 'utf-8');
+    if (latestBotsRaw !== lastBotFileHash) {
+      console.log("🆕 bot.json updated — starting bots immediately...");
+      bots = JSON.parse(latestBotsRaw);
+      runBotsSequentially();
+      executed = true;
+      lastBotFileHash = latestBotsRaw;
+    }
+  } catch (err) {
+    console.log("⚠️ Could not read bot.json:", err.message);
+  }
+}, 500);
 
 // Time-based trigger
 setInterval(() => {
+  if (bots.length === 0) return;
+
   const now = new Date();
   const nowMs =
     now.getUTCHours() * 3600000 +
