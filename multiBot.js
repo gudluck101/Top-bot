@@ -19,7 +19,7 @@ function getBotTimestamp(bot) {
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
-  for (let attempt = 1; attempt <= 100; attempt++) {
+  for (let attempt = 1; attempt <= 10; attempt++) {
     try {
       if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
@@ -35,9 +35,11 @@ async function send(bot) {
       });
 
       // First attempt: claim + send; retries: send only
+      if (attempt === 1) {
         txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
           balanceId: bot.claimId
         }));
+      }
 
       txBuilder.addOperation(StellarSdk.Operation.payment({
         destination: bot.destination,
@@ -73,7 +75,7 @@ async function send(bot) {
     }
   }
 
-  console.log(`⛔ [${bot.name}] All 100 attempts failed.`);
+  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
 }
 
 // Run bots one-by-one
