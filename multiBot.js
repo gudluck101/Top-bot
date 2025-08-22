@@ -19,8 +19,7 @@ function getBotTimestamp(bot) {
 async function send(bot) {
   const botKey = StellarSdk.Keypair.fromSecret(bot.secret);
 
-  let attempt = 1;
-while (true) {
+  for (let attempt = 1; attempt <= 200; attempt++) {
     try {
       if (attempt > 1) await new Promise(res => setTimeout(res, 400));
 
@@ -35,12 +34,9 @@ while (true) {
         networkPassphrase: 'Pi Network',
       });
 
-      // First attempt: claim + send; retries: send only
-      if (attempt === 1) {
         txBuilder.addOperation(StellarSdk.Operation.claimClaimableBalance({
           balanceId: bot.claimId
         }));
-      }
 
       txBuilder.addOperation(StellarSdk.Operation.payment({
         destination: bot.destination,
@@ -74,10 +70,9 @@ while (true) {
         console.log('🔍 Raw error:', e.message || e.toString());
       }
     }
-  attempt++;
   }
 
-  console.log(`⛔ [${bot.name}] All 10 attempts failed.`);
+  console.log(`⛔ [${bot.name}] All 200 attempts failed.`);
 }
 
 // Run bots one-by-one
