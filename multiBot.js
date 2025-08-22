@@ -21,7 +21,7 @@ async function send(bot) {
 
   for (let attempt = 1; attempt <= 200; attempt++) {
     try {
-      if (attempt > 1) await new Promise(res => setTimeout(res, 400));
+      if (attempt > 1) await new Promise(res => setTimeout(res, 1000));
 
       const accountData = await server.loadAccount(bot.public);
       const account = new StellarSdk.Account(bot.public, accountData.sequence);
