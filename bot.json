@@ -1,14 +1,14 @@
 [
   {
-    "name": "AutoClaimBot1",
-    "secret": "SCOMUMGVBS6IUDC6O5TR5YRG4CAKB4PJU5LLT7JRECFXKHXDYMP2YZNF",
-    "public": "GDJTVWDN6M6NKVKJFGPCPEV346M6UPKVGLCO7NVTNMJGN7NDTD7G55KR",
-    "claimId": "000000007fb0a04056157e22b3385562ee68de66eae65f9417db0122e1cea3addf671d22",
+    "name": "Top-boyAutoClaimBot1",
+    "secret": "SD3D5IRPU3UL5JOHVFRLJQQW65PAIHUVEJNDFGTHZE2QDBSXGH2OYGNH",
+    "public": "GB6BMY6PKHSPBSRSPRTF7LEMKWCRG2XJYZIH6JAIS7ZXRLCRP6DYZSQB",
+    "claimId": "000000000c1b8a94949411837c808a9435c67fe9a5b2149d7958393bac8e13c2a94d8dfa",
     "destination": "GBTSG5JYBACK55CQ3KEKR46EO5LEJCNZZHTHAQF64NOQWJUMMOSML6JQ",
-    "amount": "4.40",
+    "amount": "13.6398540",
     "baseFeePi": "0.02",
     "hour": "20",
-    "minute": "06",
+    "minute": "24",
     "second": "0",
     "millisecond": "0"
   }
